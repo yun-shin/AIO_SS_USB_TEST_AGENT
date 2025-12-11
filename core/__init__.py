@@ -26,6 +26,14 @@ from .exceptions import (
     ConfigurationError,
 )
 from .container import Container, get_container
+from .memory import (
+    IMemoryManager,
+    MemoryManager,
+    MemoryStats,
+    MemoryThresholds,
+    OptimizationResult,
+    FakeMemoryManager,
+)
 
 __all__ = [
     # Protocols
@@ -40,6 +48,13 @@ __all__ = [
     "INotifier",
     "ILogger",
     "IClock",
+    # Memory Management
+    "IMemoryManager",
+    "MemoryManager",
+    "MemoryStats",
+    "MemoryThresholds",
+    "OptimizationResult",
+    "FakeMemoryManager",
     # Exceptions
     "AgentError",
     "AgentConnectionError",

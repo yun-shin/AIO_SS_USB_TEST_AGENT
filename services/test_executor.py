@@ -150,33 +150,78 @@ class TestExecutor:
         """
         self._on_state_change = callback
 
-    async def connect(self, timeout: float = 30.0) -> bool:
+    async def connect(
+        self, timeout: float = 30.0, start_if_not_running: bool = True
+    ) -> bool:
         """Connect to USB Test.exe.
+
+        먼저 이미 실행 중인 윈도우를 찾고, 없으면 프로그램을 실행합니다.
 
         Args:
             timeout: Connection timeout in seconds.
+            start_if_not_running: 실행 중인 윈도우가 없으면 프로그램을 실행할지 여부.
 
         Returns:
             Connection success status.
         """
         self._logger.info("Connecting to USB Test.exe", exe_path=self._exe_path)
 
+        # 1. 먼저 이미 실행 중인 윈도우를 찾음 (짧은 타임아웃)
         window = await self._window_finder.find_window(
             title_re=self._window_title_pattern,
-            timeout=timeout,
+            timeout=min(5.0, timeout / 3),  # 짧은 타임아웃으로 빠르게 확인
         )
 
-        if window is None:
-            self._logger.error(
-                "Window not found",
-                pattern=self._window_title_pattern,
-                timeout=timeout,
+        if window is not None:
+            self._main_window = window
+            self._logger.info(
+                "Connected to existing USB Test.exe window", title=window.title
             )
-            return False
+            return True
 
-        self._main_window = window
-        self._logger.info("Connected to USB Test.exe", title=window.title)
-        return True
+        # 2. 윈도우가 없고, 프로그램 실행이 허용된 경우 실행
+        if start_if_not_running:
+            self._logger.info(
+                "Window not found, starting USB Test.exe", exe_path=self._exe_path
+            )
+
+            process = await self._window_finder.start_process(
+                exe_path=self._exe_path,
+                timeout=timeout / 2,
+            )
+
+            if process is None:
+                self._logger.error(
+                    "Failed to start USB Test.exe",
+                    exe_path=self._exe_path,
+                )
+                return False
+
+            self._logger.info(
+                "USB Test.exe started",
+                pid=process.pid,
+            )
+
+            # 3. 프로그램 실행 후 윈도우가 나타날 때까지 대기
+            window = await self._window_finder.find_window(
+                title_re=self._window_title_pattern,
+                timeout=timeout / 2,
+            )
+
+            if window is not None:
+                self._main_window = window
+                self._logger.info(
+                    "Connected to USB Test.exe after start", title=window.title
+                )
+                return True
+
+        # 4. 모든 시도 실패
+        self._logger.error(
+            "Window not found",
+            pattern=self._window_title_pattern,
+            timeout=timeout,
+        )
+        return False
 
     async def disconnect(self) -> None:
         """Disconnect."""

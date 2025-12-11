@@ -6,6 +6,7 @@ Re-exports constants and enumerations used in the domain layer.
 from config.constants import (
     ErrorCode,
     ProcessState,
+    SlotStatus,
     TestCapacity,
     TestMethod,
     TestPhase,
@@ -16,6 +17,7 @@ from config.constants import (
 __all__ = [
     "ErrorCode",
     "ProcessState",
+    "SlotStatus",
     "TestCapacity",
     "TestMethod",
     "TestPhase",

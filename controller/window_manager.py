@@ -2,6 +2,7 @@
 
 Handles MFC window discovery and management.
 Uses pywinauto to find and connect to windows.
+Supports per-slot process management with PID mapping.
 """
 
 import asyncio
@@ -10,32 +11,35 @@ from typing import Optional
 from pywinauto import Application
 from pywinauto.findwindows import ElementNotFoundError
 
-from config.constants import TimeoutConfig
+from config.constants import TimeoutConfig, SlotConfig
+from infrastructure.process_manager import SlotProcessManager
 from utils.logging import get_logger
 
 logger = get_logger(__name__)
 
 
-class WindowManager:
-    """MFC window manager.
+class SlotWindowManager:
+    """Per-slot window manager.
 
-    Connects to USB Test.exe process and manages windows.
+    Manages connection to a single USB Test.exe window for one slot.
 
     Attributes:
+        slot_idx: Slot index.
         _app: pywinauto Application instance.
         _main_window: Main window.
-        _exe_path: USB Test.exe path.
+        _pid: Process ID.
     """
 
-    def __init__(self, exe_path: str = "USB Test.exe") -> None:
-        """Initialize window manager.
+    def __init__(self, slot_idx: int) -> None:
+        """Initialize slot window manager.
 
         Args:
-            exe_path: USB Test.exe executable file path.
+            slot_idx: Slot index.
         """
-        self._exe_path = exe_path
+        self.slot_idx = slot_idx
         self._app: Optional[Application] = None
         self._main_window = None
+        self._pid: Optional[int] = None
 
     @property
     def is_connected(self) -> bool:
@@ -43,14 +47,24 @@ class WindowManager:
         return self._app is not None and self._main_window is not None
 
     @property
+    def pid(self) -> Optional[int]:
+        """Connected process PID."""
+        return self._pid
+
+    @property
     def main_window(self):
         """Main window."""
         return self._main_window
 
-    async def connect(self, timeout: float = TimeoutConfig.PROCESS_START) -> bool:
-        """Connect to USB Test.exe process.
+    async def connect_to_pid(
+        self,
+        pid: int,
+        timeout: float = TimeoutConfig.PROCESS_START_TIMEOUT,
+    ) -> bool:
+        """Connect to USB Test.exe by PID.
 
         Args:
+            pid: Process ID to connect.
             timeout: Connection timeout in seconds.
 
         Returns:
@@ -60,91 +74,53 @@ class WindowManager:
 
         while asyncio.get_event_loop().time() - start_time < timeout:
             try:
-                # 실행 중인 프로세스에 연결 시도
+                # PID로 프로세스에 연결
                 self._app = Application(backend="uia").connect(
-                    path=self._exe_path,
+                    process=pid,
                     timeout=5,
                 )
                 self._main_window = self._app.window(title_re=".*USB Test.*")
 
                 if self._main_window.exists():
+                    self._pid = pid
                     logger.info(
-                        "Connected to USB Test.exe",
+                        "Connected to USB Test.exe by PID",
+                        slot_idx=self.slot_idx,
+                        pid=pid,
                         title=self._main_window.window_text(),
                     )
                     return True
 
             except ElementNotFoundError:
-                logger.debug("USB Test.exe not found, retrying...")
+                logger.debug(
+                    "Window not found for PID, retrying...",
+                    slot_idx=self.slot_idx,
+                    pid=pid,
+                )
             except Exception as e:
-                logger.warning("Connection attempt failed", error=str(e))
+                logger.warning(
+                    "Connection attempt failed",
+                    slot_idx=self.slot_idx,
+                    pid=pid,
+                    error=str(e),
+                )
 
             await asyncio.sleep(1)
 
-        logger.error("Failed to connect to USB Test.exe", timeout=timeout)
+        logger.error(
+            "Failed to connect to USB Test.exe by PID",
+            slot_idx=self.slot_idx,
+            pid=pid,
+            timeout=timeout,
+        )
         return False
 
-    async def start_and_connect(
-        self,
-        timeout: float = TimeoutConfig.PROCESS_START,
-    ) -> bool:
-        """Start USB Test.exe and connect.
-
-        Args:
-            timeout: Timeout in seconds.
-
-        Returns:
-            Connection success status.
-        """
-        try:
-            # 프로세스 시작
-            self._app = Application(backend="uia").start(self._exe_path)
-
-            # 윈도우 대기
-            start_time = asyncio.get_event_loop().time()
-
-            while asyncio.get_event_loop().time() - start_time < timeout:
-                try:
-                    self._main_window = self._app.window(title_re=".*USB Test.*")
-                    if self._main_window.exists():
-                        logger.info(
-                            "Started and connected to USB Test.exe",
-                            title=self._main_window.window_text(),
-                        )
-                        return True
-                except ElementNotFoundError:
-                    pass
-
-                await asyncio.sleep(0.5)
-
-            logger.error("Failed to start USB Test.exe", timeout=timeout)
-            return False
-
-        except Exception as e:
-            logger.error("Failed to start process", error=str(e))
-            return False
-
     def disconnect(self) -> None:
-        """Disconnect."""
+        """Disconnect from process."""
         self._main_window = None
         self._app = None
-        logger.info("Disconnected from USB Test.exe")
-
-    def get_slot_window(self, slot_idx: int):
-        """Get window/control area for specific slot.
-
-        Args:
-            slot_idx: Slot index (0-15).
-
-        Returns:
-            Slot window or None.
-        """
-        if not self.is_connected:
-            return None
-
-        # TODO: 실제 USB Test.exe UI 구조에 맞게 구현
-        # 예: 탭 컨트롤, 패널 등의 구조 분석 필요
-        return None
+        self._pid = None
+        logger.info("Disconnected from USB Test.exe", slot_idx=self.slot_idx)
 
     def find_control(self, **kwargs):
         """Search control.
@@ -187,6 +163,210 @@ class WindowManager:
                     }
                 )
         except Exception as e:
-            logger.warning("Failed to list controls", error=str(e))
+            logger.warning(
+                "Failed to list controls",
+                slot_idx=self.slot_idx,
+                error=str(e),
+            )
 
         return controls
+
+
+class WindowManager:
+    """Multi-slot window manager.
+
+    Manages USB Test.exe processes and windows for all slots.
+    Each slot has its own dedicated process and window.
+
+    Attributes:
+        _exe_path: USB Test.exe path.
+        _process_manager: Slot process manager.
+        _slot_windows: Per-slot window managers.
+    """
+
+    def __init__(
+        self,
+        exe_path: str = "USB Test.exe",
+        max_slots: int = SlotConfig.MAX_SLOTS,
+    ) -> None:
+        """Initialize window manager.
+
+        Args:
+            exe_path: USB Test.exe executable file path.
+            max_slots: Maximum number of slots.
+        """
+        self._exe_path = exe_path
+        self._max_slots = max_slots
+        self._process_manager = SlotProcessManager(exe_path, max_slots)
+
+        # 슬롯별 윈도우 매니저
+        self._slot_windows: dict[int, SlotWindowManager] = {
+            idx: SlotWindowManager(idx) for idx in range(max_slots)
+        }
+
+    @property
+    def process_manager(self) -> SlotProcessManager:
+        """Slot process manager."""
+        return self._process_manager
+
+    def get_slot_window(self, slot_idx: int) -> Optional[SlotWindowManager]:
+        """Get window manager for specific slot.
+
+        Args:
+            slot_idx: Slot index.
+
+        Returns:
+            SlotWindowManager or None.
+        """
+        return self._slot_windows.get(slot_idx)
+
+    def is_slot_connected(self, slot_idx: int) -> bool:
+        """Check if slot is connected.
+
+        Args:
+            slot_idx: Slot index.
+
+        Returns:
+            True if slot is connected.
+        """
+        slot_window = self._slot_windows.get(slot_idx)
+        return slot_window.is_connected if slot_window else False
+
+    async def launch_and_connect(
+        self,
+        slot_idx: int,
+        timeout: float = TimeoutConfig.PROCESS_START_TIMEOUT,
+    ) -> bool:
+        """Launch USB Test.exe for a slot and connect.
+
+        This will:
+        1. Launch a new USB Test.exe process
+        2. Get its PID
+        3. Connect to it via pywinauto
+
+        Args:
+            slot_idx: Slot index.
+            timeout: Timeout in seconds.
+
+        Returns:
+            True if launch and connection succeeded.
+        """
+        if slot_idx not in self._slot_windows:
+            logger.error("Invalid slot index", slot_idx=slot_idx)
+            return False
+
+        # 기존 연결 해제
+        self._slot_windows[slot_idx].disconnect()
+
+        # 새 프로세스 실행 및 PID 획득
+        pid = await self._process_manager.launch_for_slot(slot_idx, timeout)
+        if not pid:
+            logger.error(
+                "Failed to launch process for slot",
+                slot_idx=slot_idx,
+            )
+            return False
+
+        # 프로세스 초기화 대기 (윈도우 생성 시간)
+        await asyncio.sleep(2)
+
+        # PID로 연결
+        connected = await self._slot_windows[slot_idx].connect_to_pid(pid, timeout)
+        if not connected:
+            logger.error(
+                "Failed to connect to launched process",
+                slot_idx=slot_idx,
+                pid=pid,
+            )
+            # 연결 실패 시 프로세스 종료
+            await self._process_manager.terminate_for_slot(slot_idx)
+            return False
+
+        logger.info(
+            "Successfully launched and connected for slot",
+            slot_idx=slot_idx,
+            pid=pid,
+        )
+        return True
+
+    async def connect_to_existing(
+        self,
+        slot_idx: int,
+        pid: int,
+        timeout: float = TimeoutConfig.PROCESS_START_TIMEOUT,
+    ) -> bool:
+        """Connect to an existing USB Test.exe process.
+
+        Args:
+            slot_idx: Slot index.
+            pid: Process ID to connect.
+            timeout: Timeout in seconds.
+
+        Returns:
+            True if connection succeeded.
+        """
+        if slot_idx not in self._slot_windows:
+            logger.error("Invalid slot index", slot_idx=slot_idx)
+            return False
+
+        # PID를 슬롯에 할당
+        self._process_manager.assign_pid_to_slot(slot_idx, pid)
+
+        # 연결
+        return await self._slot_windows[slot_idx].connect_to_pid(pid, timeout)
+
+    def disconnect_slot(self, slot_idx: int) -> None:
+        """Disconnect a slot.
+
+        Args:
+            slot_idx: Slot index.
+        """
+        slot_window = self._slot_windows.get(slot_idx)
+        if slot_window:
+            slot_window.disconnect()
+        self._process_manager.clear_slot(slot_idx)
+
+    async def terminate_slot(self, slot_idx: int) -> bool:
+        """Terminate process and disconnect for a slot.
+
+        Args:
+            slot_idx: Slot index.
+
+        Returns:
+            True if terminated successfully.
+        """
+        # 연결 해제
+        slot_window = self._slot_windows.get(slot_idx)
+        if slot_window:
+            slot_window.disconnect()
+
+        # 프로세스 종료
+        return await self._process_manager.terminate_for_slot(slot_idx)
+
+    async def terminate_all(self) -> None:
+        """Terminate all slot processes and disconnect."""
+        for slot_idx in self._slot_windows:
+            await self.terminate_slot(slot_idx)
+
+    def get_slot_pid(self, slot_idx: int) -> Optional[int]:
+        """Get PID for a slot.
+
+        Args:
+            slot_idx: Slot index.
+
+        Returns:
+            PID or None.
+        """
+        return self._process_manager.get_pid(slot_idx)
+
+    def refresh_all_status(self) -> None:
+        """Refresh status of all slots."""
+        self._process_manager.refresh_status()
+
+        # 프로세스가 종료된 슬롯의 연결도 해제
+        for slot_idx, slot_window in self._slot_windows.items():
+            if slot_window.is_connected:
+                pid = slot_window.pid
+                if pid and not self._process_manager.is_active(slot_idx):
+                    slot_window.disconnect()
+

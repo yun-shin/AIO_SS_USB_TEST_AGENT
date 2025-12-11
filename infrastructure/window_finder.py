@@ -335,6 +335,47 @@ class PywinautoWindowFinder(IWindowFinder):
         return None
 
 
+class FakeProcessHandle(IProcessHandle):
+    """Fake process handle for testing.
+
+    Simulates a process in tests.
+    """
+
+    def __init__(self, pid: int = 12345, running: bool = True) -> None:
+        """Initialize.
+
+        Args:
+            pid: Fake process ID.
+            running: Whether the process is running.
+        """
+        self._pid = pid
+        self._running = running
+        self._main_window: Optional[IWindowHandle] = None
+
+    @property
+    def pid(self) -> int:
+        """Process ID."""
+        return self._pid
+
+    @property
+    def is_running(self) -> bool:
+        """Running status."""
+        return self._running
+
+    def set_main_window(self, window: IWindowHandle) -> None:
+        """Set main window for testing."""
+        self._main_window = window
+
+    async def terminate(self) -> bool:
+        """Terminate process."""
+        self._running = False
+        return True
+
+    async def get_main_window(self) -> Optional[IWindowHandle]:
+        """Get main window."""
+        return self._main_window
+
+
 class FakeWindowFinder(IWindowFinder):
     """Fake window finder for testing.
 
@@ -347,6 +388,9 @@ class FakeWindowFinder(IWindowFinder):
         self._processes: dict[str, IProcessHandle] = {}
         self._find_window_calls: list[tuple[str, float]] = []
         self._find_process_calls: list[tuple[str, float]] = []
+        self._start_process_calls: list[tuple[str, float]] = []
+        # start_process 호출 시 자동으로 윈도우를 찾을 수 있도록 하는 플래그
+        self._auto_create_window_on_start: bool = True
 
     def add_window(self, title_pattern: str, window: IWindowHandle) -> None:
         """Register fake window."""
@@ -374,6 +418,31 @@ class FakeWindowFinder(IWindowFinder):
         self._find_process_calls.append((process_name, timeout))
         return self._processes.get(process_name)
 
+    async def start_process(
+        self,
+        exe_path: str,
+        timeout: float = 30.0,
+    ) -> Optional[IProcessHandle]:
+        """Start process (fake implementation).
+
+        Args:
+            exe_path: Executable file path.
+            timeout: Start timeout in seconds.
+
+        Returns:
+            Fake process handle or None.
+        """
+        self._start_process_calls.append((exe_path, timeout))
+
+        # 이미 등록된 프로세스가 있으면 반환
+        if exe_path in self._processes:
+            return self._processes[exe_path]
+
+        # 기본적으로 fake process 생성 및 반환
+        fake_process = FakeProcessHandle(pid=12345, running=True)
+        self._processes[exe_path] = fake_process
+        return fake_process
+
     @property
     def find_window_calls(self) -> list[tuple[str, float]]:
         """find_window call history."""
@@ -383,6 +452,11 @@ class FakeWindowFinder(IWindowFinder):
     def find_process_calls(self) -> list[tuple[str, float]]:
         """find_process call history."""
         return self._find_process_calls
+
+    @property
+    def start_process_calls(self) -> list[tuple[str, float]]:
+        """start_process call history."""
+        return self._start_process_calls
 
 
 class FakeWindowHandle(IWindowHandle):

@@ -211,24 +211,26 @@ class VendorId(StrEnum):
 class AgentMessageType(StrEnum):
     """Agent -> Backend message types."""
 
-    REGISTER = "register"
-    STATE_UPDATE = "state_update"
-    TEST_COMPLETED = "test_completed"
-    TEST_FAILED = "test_failed"
-    HEARTBEAT = "heartbeat"
-    LOG = "log"
-    ERROR = "error"
+    REGISTER = "agent:register"
+    STATE_UPDATE = "agent:state_update"
+    TEST_COMPLETED = "agent:test_completed"
+    TEST_FAILED = "agent:test_failed"
+    HEARTBEAT = "agent:heartbeat"
+    LOG = "agent:log"
+    ERROR = "agent:error"
+    DRIVE_LIST = "agent:drive_list"
 
 
 class BackendMessageType(StrEnum):
     """Backend -> Agent message types."""
 
-    REGISTER_ACK = "register_ack"
-    RUN_TEST = "run_test"
-    STOP_TEST = "stop_test"
-    GET_STATUS = "get_status"
-    HEARTBEAT_ACK = "heartbeat_ack"
-    CONFIG_UPDATE = "config_update"
+    REGISTER_ACK = "backend:register_ack"
+    RUN_TEST = "backend:run_test"
+    STOP_TEST = "backend:stop_test"
+    GET_STATUS = "backend:get_status"
+    HEARTBEAT_ACK = "backend:heartbeat_ack"
+    CONFIG_UPDATE = "backend:config_update"
+    GET_DRIVES = "backend:get_drives"
 
 
 # =============================================================================
@@ -275,6 +277,23 @@ class TimeoutConfig:
     # 버튼 대기 관련
     BUTTON_WAIT_TIMEOUT = 30  # 초
     BUTTON_CHECK_INTERVAL = 0.5  # 초
+
+    # 엘리먼트 관련
+    ELEMENT_WAIT = 10  # 초 (UI 엘리먼트 대기 기본 시간)
+
+
+class SlotStatus(StrEnum):
+    """Slot status.
+
+    Represents the current status of a test slot.
+    """
+
+    IDLE = "idle"
+    PREPARING = "preparing"
+    RUNNING = "running"
+    STOPPED = "stopped"
+    COMPLETED = "completed"
+    ERROR = "error"
 
 
 class SlotConfig:

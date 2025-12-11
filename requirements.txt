@@ -1,6 +1,7 @@
 # Core
 pywinauto>=0.6.8
 pywin32>=306
+psutil>=5.9.0
 httpx>=0.25.0
 websockets>=12.0
 tenacity>=8.2.0

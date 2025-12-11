@@ -6,8 +6,11 @@ All services receive dependencies via Protocol injection.
 
 from .test_executor import TestExecutor
 from .state_monitor import StateMonitor
+from .memory_monitor import MemoryMonitor, MemoryMonitorConfig
 
 __all__ = [
     "TestExecutor",
     "StateMonitor",
+    "MemoryMonitor",
+    "MemoryMonitorConfig",
 ]

@@ -44,6 +44,7 @@ class TestConfig:
     method: TestMethod
     test_type: TestType
     loop_count: int
+    test_name: str = "USB Test"  # Test name for display
 
     # Optional settings
     loop_step: int = 1

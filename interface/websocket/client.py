@@ -285,6 +285,24 @@ class WebSocketClient:
         }
         return await self.send(message)
 
+    async def send_drive_list(self, drives: list[dict]) -> bool:
+        """Send removable drive list.
+
+        Args:
+            drives: List of drive info dictionaries.
+
+        Returns:
+            Send success status.
+        """
+        message = {
+            "type": AgentMessageType.DRIVE_LIST.value,
+            "data": {
+                "drives": drives,
+                "timestamp": datetime.now().isoformat(),
+            },
+        }
+        return await self.send(message)
+
     async def run(self) -> None:
         """Run main event loop.
 
@@ -362,6 +380,11 @@ class WebSocketClient:
         elif msg_type == BackendMessageType.HEARTBEAT_ACK.value:
             logger.debug("Heartbeat acknowledged")
 
+        # 드라이브 목록 요청 처리
+        elif msg_type == BackendMessageType.GET_DRIVES.value:
+            logger.info("Drive list requested")
+            await self._handle_get_drives()
+
         # 등록된 핸들러 호출
         if msg_type in self._message_handlers:
             handler = self._message_handlers[msg_type]
@@ -376,6 +399,29 @@ class WebSocketClient:
                 await self._on_message(message)
             except Exception as e:
                 logger.error("Callback error", error=str(e))
+
+    async def _handle_get_drives(self) -> None:
+        """Handle get drives request.
+
+        Scans for removable drives and sends the list back to backend.
+        """
+        try:
+            from infrastructure.drive_scanner import scan_removable_drives
+
+            drives = scan_removable_drives()
+            drive_list = [drive.to_dict() for drive in drives]
+
+            logger.info("Sending drive list", count=len(drive_list))
+            await self.send_drive_list(drive_list)
+
+        except ImportError as e:
+            logger.error("Drive scanner not available", error=str(e))
+            # Send empty list on import error
+            await self.send_drive_list([])
+
+        except Exception as e:
+            logger.error("Failed to scan drives", error=str(e))
+            await self.send_drive_list([])
 
     async def _heartbeat_loop(self) -> None:
         """Heartbeat send loop."""
