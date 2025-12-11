@@ -74,8 +74,8 @@ class SlotWindowManager:
 
         while asyncio.get_event_loop().time() - start_time < timeout:
             try:
-                # PID로 프로세스에 연결
-                self._app = Application(backend="uia").connect(
+                # PID로 프로세스에 연결 (MFC 앱에 win32 백엔드 사용)
+                self._app = Application(backend="win32").connect(
                     process=pid,
                     timeout=5,
                 )
@@ -123,10 +123,10 @@ class SlotWindowManager:
         logger.info("Disconnected from USB Test.exe", slot_idx=self.slot_idx)
 
     def find_control(self, **kwargs):
-        """Search control.
+        """Search control by child_window criteria.
 
         Args:
-            **kwargs: pywinauto search criteria.
+            **kwargs: pywinauto search criteria (control_id, class_name, etc.).
 
         Returns:
             Found control or None.
@@ -138,6 +138,31 @@ class SlotWindowManager:
             return self._main_window.child_window(**kwargs)
         except ElementNotFoundError:
             return None
+
+    def get_control_by_name(self, name: str):
+        """Get control by pywinauto best match name.
+
+        Uses getattr to access controls like 'Button6', 'Static', etc.
+        This matches how AIO_USB_TEST_MACRO accesses controls.
+
+        Args:
+            name: Best match control name (e.g., 'Button6', 'Static').
+
+        Returns:
+            Found control or None.
+        """
+        if not self.is_connected or not self._main_window:
+            return None
+
+        try:
+            ctrl = getattr(self._main_window, name, None)
+            if ctrl is not None:
+                # wrapper_object()를 호출해서 실제 컨트롤 반환
+                return ctrl.wrapper_object() if hasattr(ctrl, 'wrapper_object') else ctrl
+        except Exception:
+            pass
+
+        return None
 
     def list_controls(self) -> list[dict]:
         """Get all controls list.

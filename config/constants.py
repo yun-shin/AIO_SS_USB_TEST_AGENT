@@ -62,20 +62,20 @@ class TestType(StrEnum):
     """Test type.
 
     Test types supported by USB Test.
+    Values match USB Test.exe ComboBox items.
     """
 
-    FULL_PHOTO = "Full Photo"
-    FULL_MP3 = "Full MP3"
-    HOT_PHOTO = "Hot Photo"
-    HOT_MP3 = "Hot MP3"
+    MP3 = "MP3"
+    PHOTO = "Photo"
+    OPTION = "Option"
 
     def is_hot_test(self) -> bool:
         """Check if this is a hot test.
 
         Returns:
-            True if hot test.
+            True if hot test (currently not supported in this version).
         """
-        return self.value.startswith("Hot")
+        return False
 
     def get_test_file(self) -> str:
         """Return test file type.
@@ -83,7 +83,7 @@ class TestType(StrEnum):
         Returns:
             "Photo" or "MP3".
         """
-        return "Photo" if "Photo" in self.value else "MP3"
+        return "Photo" if self == TestType.PHOTO else "MP3"
 
 
 class ProcessState(IntEnum):
@@ -103,12 +103,18 @@ class ProcessState(IntEnum):
     def from_text(cls, text: str) -> "ProcessState":
         """Convert UI text to ProcessState.
 
+        Handles both simple text ('Idle', 'Pass') and complex text ('10/10 IDLE').
+
         Args:
             text: State text read from UI.
 
         Returns:
             ProcessState enum value.
         """
+        if not text:
+            return cls.UNKNOWN
+
+        # 정확한 매칭 먼저 시도 (Button6 스타일)
         state_map = {
             "Idle": cls.IDLE,
             "Pass": cls.PASS,
@@ -116,7 +122,26 @@ class ProcessState(IntEnum):
             "Fail": cls.FAIL,
             "Test": cls.TEST,
         }
-        return state_map.get(text, cls.UNKNOWN)
+        if text in state_map:
+            return state_map[text]
+
+        # 대소문자 무시 매칭 시도
+        text_lower = text.lower().strip()
+        for key, value in state_map.items():
+            if key.lower() == text_lower:
+                return value
+
+        # 복합 텍스트에서 상태 추출 (예: '10/10 IDLE' → 'IDLE')
+        # Static 컨트롤이 '숫자/숫자 상태' 형식으로 표시되는 경우
+        parts = text.split()
+        if len(parts) >= 2:
+            # 마지막 부분이 상태일 가능성
+            last_part = parts[-1]
+            for key, value in state_map.items():
+                if key.lower() == last_part.lower():
+                    return value
+
+        return cls.UNKNOWN
 
 
 class TestPhase(IntEnum):
@@ -138,14 +163,22 @@ class TestPhase(IntEnum):
     def from_text(cls, text: str) -> "TestPhase":
         """Convert UI text to TestPhase.
 
+        Handles various text formats:
+        - Simple: 'FileCopy', 'FileCompare'
+        - Complex from Static: '4/10  File Copy 35/88' -> 'FileCopy'
+
         Args:
             text: Test phase text read from UI.
 
         Returns:
             TestPhase enum value.
         """
-        # Extract alphabets only
+        if not text:
+            return cls.UNKNOWN
+
+        # Extract alphabets only for mapping
         cleaned = "".join(c for c in text if c.isalpha())
+
         phase_map = {
             "ContactTest": cls.CONTACT,
             "FileCopy": cls.COPY,
@@ -154,7 +187,23 @@ class TestPhase(IntEnum):
             "FileDel": cls.DELETE,
             "IDLE": cls.IDLE,
         }
-        return phase_map.get(cleaned, cls.UNKNOWN)
+
+        # 직접 매핑 시도
+        if cleaned in phase_map:
+            return phase_map[cleaned]
+
+        # 부분 문자열 매칭 (예: 'FileCopy' in 'FileCompare35/88' 형태)
+        for key, value in phase_map.items():
+            if key in cleaned:
+                return value
+
+        # 공백 제거 후 부분 매칭 (예: 'File Copy' -> 'FileCopy')
+        text_no_space = text.replace(" ", "")
+        for key, value in phase_map.items():
+            if key.lower() in text_no_space.lower():
+                return value
+
+        return cls.UNKNOWN
 
 
 class ErrorCode(IntEnum):
@@ -301,3 +350,47 @@ class SlotConfig:
 
     MAX_SLOTS = 4
     SLOT_INDICES = range(4)
+
+
+class MFCControlId:
+    """USB Test.exe MFC Control IDs.
+
+    Control IDs extracted from USB Test V2.0.1.
+    Uses integer IDs for win32 backend.
+    """
+
+    # Buttons
+    BTN_EXIT = 1000
+    BTN_CONTACT = 1019
+    BTN_TEST = 1014  # Start/Test button
+    BTN_STOP = 1016
+    BTN_FORMAT = 1015
+    BTN_BROWSE = 1013  # "..." button
+    BTN_CONNECT = 1044
+    BTN_DISCONNECT = 1045
+
+    # ComboBoxes
+    CMB_CAPACITY = 1028  # Memory capacity
+    CMB_METHOD = 1033  # Test method (0HR, Read, Cycle)
+    CMB_TEST_TYPE = 1039  # Test file type (MP3, Photo, Option)
+    CMB_DRIVE = 1029  # Test drive
+
+    # Edit fields
+    EDT_LOOP = 1021  # Loop count
+    EDT_LOOP_CURRENT = 1023  # Current loop (read-only display)
+    EDT_READ_COUNT = 1005
+    EDT_CONTROL_NO = 1018
+    EDT_SAMPLE = 1009
+    EDT_JIRA = 1022
+
+    # Status displays
+    TXT_STATUS = 1034  # Status text (IDLE, Test, Pass, Fail, etc.)
+    PROGRESS_BAR = 1035
+
+    # CheckBoxes
+    CHK_DENSITY_LOOP = 1036
+    CHK_IGNORE_FAIL = 1037
+    CHK_AUTO_DENSITY = 1038
+
+    # List
+    LST_TEST_DIR = 1020

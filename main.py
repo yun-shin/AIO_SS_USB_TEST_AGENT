@@ -6,46 +6,58 @@ All dependencies are injected via DI Container.
 
 import asyncio
 import signal
-from typing import Optional
 
+from config.constants import (
+    AgentMessageType,
+    BackendMessageType,
+    ProcessState,
+    SlotConfig,
+)
 from config.settings import get_settings
-from config.constants import BackendMessageType
-from interface.websocket.client import WebSocketClient
-from utils.logging import setup_logging, get_logger, bind_context, get_ilogger
-
-# Core - DI Container & Protocols
-from core import (
-    Container,
-    get_container,
-    IWindowFinder,
-    IStateStore,
-    IClock,
-    MemoryManager,
-    MemoryThresholds,
-)
-
-# Infrastructure - 실제 구현체
-from infrastructure import (
-    SystemClock,
-    PywinautoWindowFinder,
-    InMemoryStateStore,
-)
 
 # Controller - MFC Controller
 from controller.controller import MFCController
 
-# Services - 비즈니스 로직
-from services import TestExecutor, StateMonitor, MemoryMonitor, MemoryMonitorConfig
-from services.test_executor import TestRequest
+# Core - DI Container & Protocols
+from core import (
+    Container,
+    IClock,
+    IStateStore,
+    IWindowFinder,
+    MemoryManager,
+    MemoryThresholds,
+    get_container,
+)
 
 # Domain - State Machine
 from domain import (
-    SlotState,
-    SlotEvent,
-    SlotStateMachineManager,
     InvalidTransitionError,
+    SlotEvent,
+    SlotState,
+    SlotStateMachineManager,
 )
-from config.constants import SlotConfig
+
+# Infrastructure - 실제 구현체
+from infrastructure import (
+    InMemoryStateStore,
+    PywinautoWindowFinder,
+    SystemClock,
+)
+from interface.websocket.client import WebSocketClient
+
+# Services - 비즈니스 로직
+from services import (
+    MemoryMonitor,
+    MemoryMonitorConfig,
+    MFCUIMonitor,
+    MFCUIState,
+    ProcessMonitor,
+    ProcessTerminationEvent,
+    StateMonitor,
+    TestExecutor,
+    UIStateChange,
+)
+from utils.logging import bind_context, get_ilogger, get_logger, setup_logging
 
 logger = get_logger(__name__)
 
@@ -87,7 +99,7 @@ class Agent:
         memory_monitor: Memory monitor (for long-running processes).
     """
 
-    def __init__(self, container: Optional[Container] = None) -> None:
+    def __init__(self, container: Container | None = None) -> None:
         """Initialize Agent.
 
         Args:
@@ -95,23 +107,27 @@ class Agent:
         """
         self.settings = get_settings()
         self.is_running = False
-        self._shutdown_event: Optional[asyncio.Event] = None
-        self._ws_client: Optional[WebSocketClient] = None
+        self._shutdown_event: asyncio.Event | None = None
+        self._ws_client: WebSocketClient | None = None
 
         # DI Container 설정
         self._container = container or setup_container()
 
         # Services 인스턴스 (lazy initialization)
-        self._test_executor: Optional[TestExecutor] = None
-        self._state_monitor: Optional[StateMonitor] = None
-        self._memory_monitor: Optional[MemoryMonitor] = None
-        self._memory_manager: Optional[MemoryManager] = None
+        self._test_executor: TestExecutor | None = None
+        self._state_monitor: StateMonitor | None = None
+        self._memory_monitor: MemoryMonitor | None = None
+        self._memory_manager: MemoryManager | None = None
+
+        # 프로세스 및 UI 모니터링 서비스
+        self._process_monitor: ProcessMonitor | None = None
+        self._mfc_ui_monitor: MFCUIMonitor | None = None
 
         # MFC Controller - 슬롯별 USB Test.exe 제어
-        self._mfc_controller: Optional[MFCController] = None
+        self._mfc_controller: MFCController | None = None
 
         # Slot State Machine Manager (슬롯별 상태 관리)
-        self._slot_manager: Optional[SlotStateMachineManager] = None
+        self._slot_manager: SlotStateMachineManager | None = None
 
     @property
     def container(self) -> Container:
@@ -119,32 +135,42 @@ class Agent:
         return self._container
 
     @property
-    def ws_client(self) -> Optional[WebSocketClient]:
+    def ws_client(self) -> WebSocketClient | None:
         """WebSocket client."""
         return self._ws_client
 
     @property
-    def test_executor(self) -> Optional[TestExecutor]:
+    def test_executor(self) -> TestExecutor | None:
         """Test executor."""
         return self._test_executor
 
     @property
-    def state_monitor(self) -> Optional[StateMonitor]:
+    def state_monitor(self) -> StateMonitor | None:
         """State monitor."""
         return self._state_monitor
 
     @property
-    def memory_monitor(self) -> Optional[MemoryMonitor]:
+    def memory_monitor(self) -> MemoryMonitor | None:
         """Memory monitor."""
         return self._memory_monitor
 
     @property
-    def mfc_controller(self) -> Optional[MFCController]:
+    def process_monitor(self) -> ProcessMonitor | None:
+        """Process monitor for detecting unexpected terminations."""
+        return self._process_monitor
+
+    @property
+    def mfc_ui_monitor(self) -> MFCUIMonitor | None:
+        """MFC UI monitor for polling UI state."""
+        return self._mfc_ui_monitor
+
+    @property
+    def mfc_controller(self) -> MFCController | None:
         """MFC Controller for slot-based USB Test.exe control."""
         return self._mfc_controller
 
     @property
-    def slot_manager(self) -> Optional[SlotStateMachineManager]:
+    def slot_manager(self) -> SlotStateMachineManager | None:
         """Slot state machine manager."""
         return self._slot_manager
 
@@ -222,6 +248,34 @@ class Agent:
             max_slots=SlotConfig.MAX_SLOTS,
         )
 
+        # 프로세스 모니터 초기화 (PID 감시)
+        self._process_monitor = ProcessMonitor(
+            clock=clock,
+            logger=get_ilogger("process_monitor"),
+            max_slots=SlotConfig.MAX_SLOTS,
+        )
+        self._process_monitor.set_termination_callback(
+            self._on_process_terminated
+        )
+        logger.info("Process monitor initialized")
+
+        # MFC UI 모니터 초기화 (UI 상태 폴링)
+        self._mfc_ui_monitor = MFCUIMonitor(
+            window_manager=self._mfc_controller.window_manager,
+            clock=clock,
+            logger=get_ilogger("mfc_ui_monitor"),
+            max_slots=SlotConfig.MAX_SLOTS,
+        )
+        self._mfc_ui_monitor.set_change_callback(self._on_mfc_ui_changed)
+        self._mfc_ui_monitor.set_poll_callback(self._on_mfc_ui_polled)
+        self._mfc_ui_monitor.set_test_completed_callback(
+            self._on_mfc_test_completed
+        )
+        self._mfc_ui_monitor.set_user_intervention_callback(
+            self._on_user_intervention
+        )
+        logger.info("MFC UI monitor initialized")
+
         # 메모리 정리 콜백 등록
         self._register_cleanup_callbacks()
 
@@ -241,6 +295,16 @@ class Agent:
             if self._memory_monitor:
                 await self._memory_monitor.start()
                 logger.info("Memory monitor started")
+
+            # 프로세스 모니터 시작 (5초 간격)
+            if self._process_monitor:
+                await self._process_monitor.start(interval=5.0)
+                logger.info("Process monitor started")
+
+            # MFC UI 모니터 시작 (2초 간격 - 실시간 진행상황 전송을 위해 빠른 폴링)
+            if self._mfc_ui_monitor:
+                await self._mfc_ui_monitor.start(interval=2.0)
+                logger.info("MFC UI monitor started")
 
             # 메인 루프 실행
             await self._main_loop()
@@ -307,6 +371,275 @@ class Agent:
                         },
                     )
                 )
+
+        # 상태가 RUNNING으로 전환되면 모니터링 활성화
+        if new_state == SlotState.RUNNING:
+            pid = None
+            if self._mfc_controller:
+                pid = self._mfc_controller.get_slot_pid(slot_idx)
+            if pid and self._process_monitor:
+                self._process_monitor.watch_slot(slot_idx, pid, is_running=True)
+            if self._mfc_ui_monitor:
+                self._mfc_ui_monitor.add_monitored_slot(slot_idx)
+
+        # 상태가 완료/실패/에러로 전환되면 모니터링 비활성화
+        elif new_state in (SlotState.COMPLETED, SlotState.FAILED, SlotState.ERROR, SlotState.IDLE):
+            if self._process_monitor:
+                self._process_monitor.unwatch_slot(slot_idx)
+            if self._mfc_ui_monitor:
+                self._mfc_ui_monitor.remove_monitored_slot(slot_idx)
+
+    async def _on_process_terminated(
+        self,
+        event: ProcessTerminationEvent,
+    ) -> None:
+        """Callback when USB Test.exe process is terminated unexpectedly.
+
+        Args:
+            event: Process termination event.
+        """
+        logger.error(
+            "USB Test.exe process terminated unexpectedly",
+            slot_idx=event.slot_idx,
+            pid=event.pid,
+            reason=event.reason.value,
+            was_running=event.was_running,
+        )
+
+        # 슬롯 상태 머신 업데이트
+        if self._slot_manager:
+            try:
+                slot_machine = self._slot_manager.get(event.slot_idx)
+                if slot_machine and slot_machine.state == SlotState.RUNNING:
+                    # ERROR 상태로 전환
+                    error_msg = (
+                        f"USB Test.exe 프로세스가 예기치 않게 종료되었습니다. "
+                        f"이유: {event.reason.value}"
+                    )
+                    slot_machine.trigger(SlotEvent.ERROR, error_message=error_msg)
+            except InvalidTransitionError as e:
+                logger.warning("Could not transition to ERROR state", error=str(e))
+                if slot_machine:
+                    slot_machine.force_state(
+                        SlotState.ERROR,
+                        f"Process terminated: {event.reason.value}"
+                    )
+
+        # Backend에 에러 알림
+        if self._ws_client:
+            await self._ws_client.send(
+                {
+                    "type": AgentMessageType.ERROR.value,
+                    "data": {
+                        "slot_idx": event.slot_idx,
+                        "error_code": "PROCESS_TERMINATED",
+                        "error_message": (
+                            f"USB Test.exe process terminated unexpectedly "
+                            f"(PID: {event.pid}, Reason: {event.reason.value})"
+                        ),
+                        "was_running": event.was_running,
+                        "timestamp": event.timestamp.isoformat(),
+                    },
+                }
+            )
+
+        # MFC UI 모니터링에서도 제거
+        if self._mfc_ui_monitor:
+            self._mfc_ui_monitor.remove_monitored_slot(event.slot_idx)
+
+    def _determine_status(self, state: MFCUIState) -> str:
+        """Determine Frontend status from MFC UI state.
+
+        Status determination logic (순서 중요!):
+        1. Fail: 테스트 실패 -> "failed" (최우선)
+        2. Stop: 중지됨 -> "stopping"
+        3. 완료 조건 (루프 완료): current_loop == total_loop and Phase == IDLE -> "completed"
+           - Pass 상태라도 루프가 모두 완료되고 Phase가 IDLE이면 completed
+        4. Pass/Test: 테스트 진행 중 -> "running"
+        5. Idle: 대기 상태 -> "idle"
+
+        Args:
+            state: Current MFC UI state.
+
+        Returns:
+            Frontend status string.
+        """
+        from config.constants import TestPhase
+
+        process_state = state.process_state
+
+        # 1. Fail은 항상 failed (최우선)
+        if process_state == ProcessState.FAIL:
+            return "failed"
+
+        # 2. Stop은 항상 stopping
+        if process_state == ProcessState.STOP:
+            return "stopping"
+
+        # 3. 루프 완료 조건 (Pass/Idle 상태이면서 완료)
+        # Pass 상태에서도 루프가 끝나면 완료로 처리해야 함
+        if (
+            state.total_loop > 0
+            and state.current_loop == state.total_loop
+            and state.test_phase == TestPhase.IDLE
+        ):
+            return "completed"
+
+        # 4. Pass 또는 Test는 running (테스트 진행 중)
+        if process_state in (ProcessState.PASS, ProcessState.TEST):
+            return "running"
+
+        # 5. Idle 상태 (테스트 시작 전 대기)
+        if process_state == ProcessState.IDLE:
+            return "idle"
+
+        # Unknown 또는 기타
+        return "error"
+
+    async def _on_mfc_ui_polled(self, state: MFCUIState) -> None:
+        """Callback on every MFC UI poll.
+
+        Sends current state to Backend regardless of changes.
+        This ensures real-time progress updates.
+
+        Args:
+            state: Current MFC UI state.
+        """
+        # Frontend status 결정
+        # - Pass: 테스트 진행 중 (성공적으로 진행) -> running
+        # - Test: 테스트 진행 중 -> running
+        # - Fail: 테스트 실패 -> failed
+        # - Idle: 대기 상태 (loop 완료 시 completed)
+        # - Stop: 중지됨 -> stopping
+        status = self._determine_status(state)
+
+        # Backend에 현재 상태 전송 (매 폴링마다)
+        # Backend/Frontend가 바로 사용할 수 있는 필드명 사용
+        if self._ws_client:
+            await self._ws_client.send_state_update(
+                slot_idx=state.slot_idx,
+                state_data={
+                    "status": status,
+                    "progress": state.progress_percent,
+                    "current_loop": state.current_loop,
+                    "total_loop": state.total_loop,
+                    "current_phase": state.test_phase.name,
+                },
+            )
+
+    async def _on_mfc_ui_changed(self, change: UIStateChange) -> None:
+        """Callback when MFC UI state changes.
+
+        Args:
+            change: UI state change event.
+        """
+        logger.debug(
+            "MFC UI state changed",
+            slot_idx=change.slot_idx,
+            changed_fields=change.changed_fields,
+        )
+
+        # Backend에 UI 상태 업데이트 전송
+        # Backend/Frontend가 바로 사용할 수 있는 필드명 사용
+        if self._ws_client and change.current_state:
+            state = change.current_state
+            status = self._determine_status(state)
+            await self._ws_client.send_state_update(
+                slot_idx=change.slot_idx,
+                state_data={
+                    "status": status,
+                    "progress": state.progress_percent,
+                    "current_loop": state.current_loop,
+                    "total_loop": state.total_loop,
+                    "current_phase": state.test_phase.name,
+                },
+            )
+
+    async def _on_mfc_test_completed(
+        self,
+        slot_idx: int,
+        final_state: ProcessState,
+    ) -> None:
+        """Callback when test completion is detected via MFC UI.
+
+        This is triggered by the UI monitor when process state
+        changes from TEST to PASS/FAIL/STOP.
+
+        Args:
+            slot_idx: Slot index.
+            final_state: Final process state.
+        """
+        logger.info(
+            "Test completion detected via MFC UI",
+            slot_idx=slot_idx,
+            final_state=final_state.name,
+        )
+
+        # 슬롯 상태 머신 업데이트
+        if self._slot_manager:
+            try:
+                slot_machine = self._slot_manager.get(slot_idx)
+                if slot_machine and slot_machine.state == SlotState.RUNNING:
+                    if final_state == ProcessState.PASS:
+                        slot_machine.trigger(SlotEvent.COMPLETE)
+                    elif final_state == ProcessState.FAIL:
+                        slot_machine.trigger(
+                            SlotEvent.FAIL,
+                            error_message="Test failed (detected via UI)",
+                        )
+                    elif final_state == ProcessState.STOP:
+                        slot_machine.trigger(SlotEvent.STOPPED)
+            except InvalidTransitionError as e:
+                logger.warning(
+                    "Could not transition state on test completion",
+                    error=str(e),
+                )
+
+        # Backend에 테스트 완료 알림
+        if self._ws_client:
+            success = final_state == ProcessState.PASS
+            await self._ws_client.send_test_completed(
+                slot_idx=slot_idx,
+                success=success,
+                result_data={
+                    "final_state": final_state.name,
+                    "detected_via": "mfc_ui_monitor",
+                },
+            )
+
+    async def _on_user_intervention(
+        self,
+        slot_idx: int,
+        description: str,
+    ) -> None:
+        """Callback when user intervention is detected.
+
+        This is triggered when the user appears to have manually
+        interacted with the USB Test.exe UI.
+
+        Args:
+            slot_idx: Slot index.
+            description: Description of the intervention.
+        """
+        logger.warning(
+            "User intervention detected",
+            slot_idx=slot_idx,
+            description=description,
+        )
+
+        # Backend에 사용자 개입 알림
+        if self._ws_client:
+            await self._ws_client.send(
+                {
+                    "type": AgentMessageType.ERROR.value,
+                    "data": {
+                        "slot_idx": slot_idx,
+                        "error_code": "USER_INTERVENTION",
+                        "error_message": description,
+                        "severity": "warning",
+                    },
+                }
+            )
 
     def _register_handlers(self) -> None:
         """Register Backend message handlers."""
@@ -412,14 +745,21 @@ class Agent:
             # TestConfig 객체 생성
             from domain.models.test_config import TestConfig
 
+            # 받은 설정 로깅
+            logger.info(
+                "Received test config",
+                slot_idx=slot_idx,
+                test_config=test_config,
+            )
+
             config = TestConfig(
                 slot_idx=slot_idx,
                 jira_no=test_config.get("jira_no", ""),
                 sample_no=test_config.get("sample_no", ""),
                 capacity=test_config.get("capacity", "1TB"),
-                drive=test_config.get("drive", "E"),
+                drive=test_config.get("drive", "D"),
                 method=test_config.get("method", "0HR"),
-                test_type=test_config.get("test_type", "Full Photo"),
+                test_type=test_config.get("test_type", "Photo"),
                 loop_count=test_config.get("loop_count", 1),
                 test_name=test_config.get("test_name", "USB Test"),
             )
@@ -603,6 +943,16 @@ class Agent:
         if self._memory_monitor:
             await self._memory_monitor.stop()
             self._memory_monitor = None
+
+        # 프로세스 모니터 중지
+        if self._process_monitor:
+            await self._process_monitor.stop()
+            self._process_monitor = None
+
+        # MFC UI 모니터 중지
+        if self._mfc_ui_monitor:
+            await self._mfc_ui_monitor.stop()
+            self._mfc_ui_monitor = None
 
         # StateMonitor 중지
         if self._state_monitor:

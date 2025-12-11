@@ -15,6 +15,7 @@ from config.constants import (
     TestType,
     ProcessState,
     SlotConfig,
+    MFCControlId,
 )
 from domain.models.test_config import TestConfig
 from domain.models.test_state import TestState
@@ -213,13 +214,32 @@ class MFCController:
             if not slot_window or not slot_window.is_connected:
                 raise RuntimeError("Slot window not available")
 
-            # TODO: 실제 MFC 컨트롤 조작 구현
-            # 1. 용량 설정
-            # 2. 테스트 방식 설정
-            # 3. 시작 버튼 클릭
+            # MFC 컨트롤 조작 (순서 중요!)
+            # 0. Ignore Fail 체크 해제 (항상 먼저 실행)
+            await self._uncheck_ignore_fail(slot_window)
 
+            # 1. 드라이브 설정
+            await self._set_drive(slot_window, config.drive)
+
+            # 2. 용량 설정
             await self._set_capacity(slot_window, config.capacity)
+
+            # 3. 테스트 방식 설정
             await self._set_method(slot_window, config.method)
+
+            # 4. 루프 카운트 설정
+            await self._set_loop_count(slot_window, config.loop_count)
+
+            # 5. 테스트 타입 설정
+            await self._set_test_type(slot_window, config.test_type)
+
+            # 6. Contact 버튼 클릭 (환경 변수 및 드라이브 인식)
+            await self._click_contact_button(slot_window)
+
+            # Contact 완료 대기 및 Test 버튼 활성화 대기
+            await self._wait_for_test_button_enabled(slot_window, timeout=10.0)
+
+            # 7. Test 버튼 클릭 (테스트 시작)
             await self._click_start_button(slot_window)
 
             state.status = SlotStatus.RUNNING
@@ -343,6 +363,191 @@ class MFCController:
     # ===== Private Helper Methods =====
     # These methods should be implemented according to actual USB Test.exe UI structure.
 
+    async def _select_combobox_item(
+        self,
+        slot_window: SlotWindowManager,
+        control_id: int,
+        value: str,
+    ) -> bool:
+        """Select item in combobox by value.
+
+        Args:
+            slot_window: Slot window manager.
+            control_id: Control ID (integer for win32 backend).
+            value: Value to select.
+
+        Returns:
+            Success status.
+        """
+        try:
+            combo = slot_window.find_control(control_id=control_id, class_name="ComboBox")
+            if combo is None:
+                logger.error("ComboBox not found", control_id=control_id)
+                return False
+
+            # 콤보박스 아이템 목록 가져오기
+            items = combo.item_texts()
+            logger.debug("ComboBox items", control_id=control_id, items=items)
+
+            # 정확한 매칭 또는 부분 매칭으로 아이템 선택
+            for idx, item in enumerate(items):
+                if value == item or value in item or item in value:
+                    combo.select(idx)
+                    await asyncio.sleep(0.1)
+                    logger.debug("ComboBox selected", control_id=control_id, value=item)
+                    return True
+
+            logger.warning(
+                "Item not found in combobox",
+                control_id=control_id,
+                value=value,
+                available=items,
+            )
+            return False
+
+        except Exception as e:
+            logger.error(
+                "Failed to select combobox item",
+                control_id=control_id,
+                value=value,
+                error=str(e),
+            )
+            return False
+
+    async def _set_edit_text(
+        self,
+        slot_window: SlotWindowManager,
+        control_id: int,
+        value: str,
+    ) -> bool:
+        """Set text in edit control.
+
+        Args:
+            slot_window: Slot window manager.
+            control_id: Control ID (integer for win32 backend).
+            value: Text value to set.
+
+        Returns:
+            Success status.
+        """
+        try:
+            edit = slot_window.find_control(control_id=control_id, class_name="Edit")
+            if edit is None:
+                logger.error("Edit control not found", control_id=control_id)
+                return False
+
+            edit.set_edit_text(value)
+            await asyncio.sleep(0.1)
+            logger.debug("Edit text set", control_id=control_id, value=value)
+            return True
+
+        except Exception as e:
+            logger.error(
+                "Failed to set edit text",
+                control_id=control_id,
+                value=value,
+                error=str(e),
+            )
+            return False
+
+    async def _click_button(
+        self,
+        slot_window: SlotWindowManager,
+        control_id: int,
+    ) -> bool:
+        """Click button by control ID.
+
+        Args:
+            slot_window: Slot window manager.
+            control_id: Control ID (integer for win32 backend).
+
+        Returns:
+            Success status.
+        """
+        try:
+            button = slot_window.find_control(control_id=control_id, class_name="Button")
+            if button is None:
+                logger.error("Button not found", control_id=control_id)
+                return False
+
+            button.click_input()
+            await asyncio.sleep(0.2)
+            logger.debug("Button clicked", control_id=control_id)
+            return True
+
+        except Exception as e:
+            logger.error(
+                "Failed to click button",
+                control_id=control_id,
+                error=str(e),
+            )
+            return False
+
+    async def _get_status_text(self, slot_window: SlotWindowManager) -> str:
+        """Get current status text from UI.
+
+        Args:
+            slot_window: Slot window manager.
+
+        Returns:
+            Status text (e.g., "IDLE", "Test", "Pass", "Fail").
+        """
+        try:
+            status = slot_window.find_control(control_id=MFCControlId.TXT_STATUS, class_name="Static")
+            if status is None:
+                return "UNKNOWN"
+            return status.window_text()
+        except Exception:
+            return "UNKNOWN"
+
+    async def _uncheck_ignore_fail(self, slot_window: SlotWindowManager) -> None:
+        """Uncheck 'Ignore Fail' checkbox if checked.
+
+        This must be called before every test to ensure proper failure detection.
+        Matching AIO_USB_TEST_MACRO behavior (ignore_fail_uncheck).
+
+        Args:
+            slot_window: Slot window manager.
+        """
+        try:
+            # Control ID 방식으로 시도
+            checkbox = slot_window.find_control(
+                control_id=MFCControlId.CHK_IGNORE_FAIL,
+                class_name="Button",
+            )
+
+            # Control ID로 못 찾으면 Best Match 이름으로 시도
+            if checkbox is None:
+                checkbox = slot_window.get_control_by_name("Ignore FailCheckBox")
+
+            if checkbox is None:
+                checkbox = slot_window.get_control_by_name("CheckBox2")
+
+            if checkbox is None:
+                logger.warning("Ignore Fail checkbox not found")
+                return
+
+            # 체크박스가 체크되어 있으면 해제
+            try:
+                # pywinauto CheckBox 컨트롤 - get_check_state() 메서드 사용
+                check_state = checkbox.get_check_state()
+                if check_state == 1:  # 1 = Checked
+                    checkbox.uncheck()
+                    logger.info("Ignore Fail checkbox unchecked")
+                else:
+                    logger.debug("Ignore Fail checkbox already unchecked")
+            except AttributeError:
+                # get_check_state가 없으면 uncheck() 직접 호출
+                checkbox.uncheck()
+                logger.info("Ignore Fail checkbox unchecked (direct)")
+
+        except Exception as e:
+            logger.warning(
+                "Failed to uncheck Ignore Fail checkbox",
+                error=str(e),
+            )
+            # 실패해도 테스트는 계속 진행 (경고만 로그)
+
     async def _set_capacity(
         self,
         slot_window: SlotWindowManager,
@@ -354,9 +559,14 @@ class MFCController:
             slot_window: Slot window manager.
             capacity: Test capacity.
         """
-        # TODO: 실제 UI 구조에 맞게 구현
-        logger.debug("Setting capacity", capacity=capacity)
-        await asyncio.sleep(0.1)
+        logger.debug("Setting capacity", capacity=str(capacity))
+        success = await self._select_combobox_item(
+            slot_window,
+            MFCControlId.CMB_CAPACITY,
+            str(capacity),
+        )
+        if not success:
+            raise RuntimeError(f"Failed to set capacity: {capacity}")
 
     async def _set_method(
         self,
@@ -369,9 +579,146 @@ class MFCController:
             slot_window: Slot window manager.
             method: Test method.
         """
-        # TODO: 실제 UI 구조에 맞게 구현
-        logger.debug("Setting method", method=method)
-        await asyncio.sleep(0.1)
+        logger.debug("Setting method", method=str(method))
+        success = await self._select_combobox_item(
+            slot_window,
+            MFCControlId.CMB_METHOD,
+            str(method),
+        )
+        if not success:
+            raise RuntimeError(f"Failed to set method: {method}")
+
+    async def _set_test_type(
+        self,
+        slot_window: SlotWindowManager,
+        test_type: TestType,
+    ) -> None:
+        """Set test type on slot window.
+
+        Args:
+            slot_window: Slot window manager.
+            test_type: Test type.
+        """
+        # WebUI의 "Full Photo"/"Full MP3" 등을 USB Test.exe의 "Photo"/"MP3"로 매핑
+        test_type_str = str(test_type)
+        if "Photo" in test_type_str:
+            test_type_value = "Photo"
+        elif "MP3" in test_type_str:
+            test_type_value = "MP3"
+        else:
+            test_type_value = test_type_str
+
+        logger.debug("Setting test type", test_type=test_type_str, mapped_value=test_type_value)
+        success = await self._select_combobox_item(
+            slot_window,
+            MFCControlId.CMB_TEST_TYPE,
+            test_type_value,
+        )
+        if not success:
+            raise RuntimeError(f"Failed to set test type: {test_type}")
+
+    async def _set_drive(
+        self,
+        slot_window: SlotWindowManager,
+        drive: str,
+    ) -> None:
+        """Set test drive on slot window.
+
+        Args:
+            slot_window: Slot window manager.
+            drive: Drive letter (e.g., "E", "E:", "E:\\", "D: - 119.1GB").
+        """
+        logger.debug("Setting drive", drive=drive)
+
+        # 드라이브 문자만 추출
+        # "D: - 119.1GB" -> "D"
+        # "E:" -> "E"
+        # "E:\\" -> "E"
+        # "E" -> "E"
+        drive_letter = drive.split(":")[0].split("-")[0].strip().upper()
+        if len(drive_letter) > 1:
+            drive_letter = drive_letter[0]
+
+        logger.debug("Extracted drive letter", drive_letter=drive_letter)
+
+        # USB Test.exe는 "D:\\" 형식으로 드라이브를 표시
+        # 드라이브 문자로 시작하는 항목을 찾아 선택
+        success = await self._select_drive_by_letter(
+            slot_window,
+            drive_letter,
+        )
+        if not success:
+            raise RuntimeError(f"Failed to set drive: {drive}")
+
+    async def _select_drive_by_letter(
+        self,
+        slot_window: SlotWindowManager,
+        drive_letter: str,
+    ) -> bool:
+        """Select drive in combobox by drive letter.
+
+        Args:
+            slot_window: Slot window manager.
+            drive_letter: Drive letter (e.g., "D", "E").
+
+        Returns:
+            Success status.
+        """
+        try:
+            combo = slot_window.find_control(
+                control_id=MFCControlId.CMB_DRIVE,
+                class_name="ComboBox",
+            )
+            if combo is None:
+                logger.error("Drive ComboBox not found")
+                return False
+
+            items = combo.item_texts()
+            logger.debug("Drive ComboBox items", items=items)
+
+            # 드라이브 문자로 시작하는 항목 찾기 (예: "D:\\" 에서 "D" 매칭)
+            for idx, item in enumerate(items):
+                item_letter = item.rstrip(":\\").upper()
+                if item_letter == drive_letter or item.upper().startswith(drive_letter):
+                    combo.select(idx)
+                    await asyncio.sleep(0.1)
+                    logger.debug("Drive selected", drive_letter=drive_letter, item=item)
+                    return True
+
+            logger.warning(
+                "Drive not found in combobox",
+                drive_letter=drive_letter,
+                available=items,
+            )
+            return False
+
+        except Exception as e:
+            logger.error(
+                "Failed to select drive",
+                drive_letter=drive_letter,
+                error=str(e),
+            )
+            return False
+
+    async def _set_loop_count(
+        self,
+        slot_window: SlotWindowManager,
+        loop_count: int,
+    ) -> None:
+        """Set loop count on slot window.
+
+        Args:
+            slot_window: Slot window manager.
+            loop_count: Number of loops.
+        """
+        logger.debug("Setting loop count", loop_count=loop_count)
+        success = await self._set_edit_text(
+            slot_window,
+            MFCControlId.EDT_LOOP,
+            str(loop_count),
+        )
+        if not success:
+            raise RuntimeError(f"Failed to set loop count: {loop_count}")
 
     async def _click_start_button(self, slot_window: SlotWindowManager) -> None:
         """Click start button on slot window.
@@ -379,9 +726,60 @@ class MFCController:
         Args:
             slot_window: Slot window manager.
         """
-        # TODO: Implement according to actual UI structure
         logger.debug("Clicking start button")
-        await asyncio.sleep(0.1)
+        success = await self._click_button(slot_window, MFCControlId.BTN_TEST)
+        if not success:
+            raise RuntimeError("Failed to click start button")
+
+    async def _click_contact_button(self, slot_window: SlotWindowManager) -> None:
+        """Click contact button on slot window.
+
+        Contact button initializes environment variables and drive recognition.
+        Must be clicked before Test button.
+
+        Args:
+            slot_window: Slot window manager.
+        """
+        logger.debug("Clicking contact button")
+        success = await self._click_button(slot_window, MFCControlId.BTN_CONTACT)
+        if not success:
+            raise RuntimeError("Failed to click contact button")
+
+    async def _wait_for_test_button_enabled(
+        self,
+        slot_window: SlotWindowManager,
+        timeout: float = 10.0,
+    ) -> None:
+        """Wait for Test button to become enabled after Contact.
+
+        Args:
+            slot_window: Slot window manager.
+            timeout: Maximum wait time in seconds.
+
+        Raises:
+            RuntimeError: If Test button is not enabled within timeout.
+        """
+        logger.debug("Waiting for Test button to be enabled", timeout=timeout)
+        start_time = asyncio.get_event_loop().time()
+
+        while asyncio.get_event_loop().time() - start_time < timeout:
+            try:
+                button = slot_window.find_control(
+                    control_id=MFCControlId.BTN_TEST,
+                    class_name="Button",
+                )
+                if button is not None and button.is_enabled():
+                    logger.debug("Test button is now enabled")
+                    return
+            except Exception:
+                pass
+
+            await asyncio.sleep(0.5)
+
+        raise RuntimeError(
+            f"Test button not enabled within {timeout} seconds. "
+            "Contact test may have failed or drive not recognized."
+        )
 
     async def _click_stop_button(self, slot_window: SlotWindowManager) -> None:
         """Click stop button on slot window.
@@ -389,9 +787,10 @@ class MFCController:
         Args:
             slot_window: Slot window manager.
         """
-        # TODO: Implement according to actual UI structure
         logger.debug("Clicking stop button")
-        await asyncio.sleep(0.1)
+        success = await self._click_button(slot_window, MFCControlId.BTN_STOP)
+        if not success:
+            raise RuntimeError("Failed to click stop button")
 
     def list_controls(self, slot_idx: int) -> list[dict]:
         """Get UI control list for a slot (for debugging).
