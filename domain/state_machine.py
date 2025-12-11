@@ -275,6 +275,7 @@ class SlotStateMachine:
         # Error transitions
         Transition(SlotState.ERROR, SlotEvent.RESET, SlotState.IDLE),
         Transition(SlotState.ERROR, SlotEvent.RETRY, SlotState.IDLE),
+        Transition(SlotState.ERROR, SlotEvent.START_TEST, SlotState.PREPARING),
     ]
 
     # Build transition lookup table
@@ -383,6 +384,12 @@ class SlotStateMachine:
 
         if event == SlotEvent.START_TEST:
             update_data["started_at"] = datetime.now()
+            # 에러/실패/완료 상태에서 재시작 시 이전 에러 정보 초기화
+            if old_state in (SlotState.ERROR, SlotState.FAILED, SlotState.COMPLETED):
+                update_data["error_message"] = None
+                update_data["error_count"] = 0
+                update_data["retry_count"] = 0
+                update_data["current_loop"] = 0
         elif event in (SlotEvent.RESET, SlotEvent.STOPPED):
             self._context = self._context.reset()
             update_data = {}

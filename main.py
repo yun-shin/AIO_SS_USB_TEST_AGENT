@@ -406,6 +406,14 @@ class Agent:
             was_running=event.was_running,
         )
 
+        # MFC Controller 슬롯 연결 정보 정리 (중요: 재시도 시 새 프로세스 실행을 위해)
+        if self._mfc_controller:
+            await self._mfc_controller.disconnect_slot(event.slot_idx)
+            logger.info(
+                "Slot connection cleaned up after process termination",
+                slot_idx=event.slot_idx,
+            )
+
         # 슬롯 상태 머신 업데이트
         if self._slot_manager:
             try:

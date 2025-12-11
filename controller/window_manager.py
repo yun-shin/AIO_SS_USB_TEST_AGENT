@@ -43,8 +43,29 @@ class SlotWindowManager:
 
     @property
     def is_connected(self) -> bool:
-        """Process connection status."""
-        return self._app is not None and self._main_window is not None
+        """Process connection status.
+
+        Returns True only if app, window are set AND the process is still running.
+        """
+        if self._app is None or self._main_window is None or self._pid is None:
+            return False
+
+        # 프로세스가 실제로 살아있는지 확인
+        try:
+            import psutil
+            if not psutil.pid_exists(self._pid):
+                # 프로세스가 죽었으면 연결 정보 정리
+                self._clear_connection()
+                return False
+            return True
+        except Exception:
+            return False
+
+    def _clear_connection(self) -> None:
+        """Clear connection info (internal helper)."""
+        self._main_window = None
+        self._app = None
+        self._pid = None
 
     @property
     def pid(self) -> Optional[int]:
@@ -117,9 +138,7 @@ class SlotWindowManager:
 
     def disconnect(self) -> None:
         """Disconnect from process."""
-        self._main_window = None
-        self._app = None
-        self._pid = None
+        self._clear_connection()
         logger.info("Disconnected from USB Test.exe", slot_idx=self.slot_idx)
 
     def find_control(self, **kwargs):

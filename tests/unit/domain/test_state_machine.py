@@ -489,3 +489,67 @@ class TestTransitionPaths:
 
         machine.trigger(SlotEvent.RESUME)
         assert machine.state == SlotState.RUNNING
+
+    def test_start_test_after_error(self):
+        """Test START_TEST after error state (recovery scenario).
+
+        When a slot enters ERROR state and user takes corrective action,
+        they should be able to restart the test without calling RESET first.
+        """
+        machine = SlotStateMachine(slot_idx=0)
+
+        # 테스트 시작 -> 에러 발생
+        machine.trigger(SlotEvent.START_TEST)
+        machine.trigger(SlotEvent.ERROR, error_message="Connection lost")
+
+        assert machine.state == SlotState.ERROR
+        assert machine.context.error_message == "Connection lost"
+        assert machine.context.error_count == 1
+
+        # 에러 상태에서 바로 START_TEST 가능해야 함
+        machine.trigger(
+            SlotEvent.START_TEST,
+            context_update={"test_name": "Retry Test"},
+        )
+
+        assert machine.state == SlotState.PREPARING
+        # 에러 정보가 초기화되어야 함
+        assert machine.context.error_message is None
+        assert machine.context.error_count == 0
+        assert machine.context.test_name == "Retry Test"
+        assert machine.context.started_at is not None
+
+    def test_start_test_after_failed(self):
+        """Test START_TEST after failed state."""
+        machine = SlotStateMachine(slot_idx=0)
+
+        machine.trigger(SlotEvent.START_TEST)
+        machine.trigger(SlotEvent.CONFIGURE)
+        machine.trigger(SlotEvent.RUN)
+        machine.trigger(SlotEvent.FAIL, error_message="Test failed")
+
+        assert machine.state == SlotState.FAILED
+        assert machine.context.error_message == "Test failed"
+
+        # FAILED 상태에서 바로 START_TEST 가능
+        machine.trigger(SlotEvent.START_TEST)
+
+        assert machine.state == SlotState.PREPARING
+        assert machine.context.error_message is None
+
+    def test_start_test_after_completed(self):
+        """Test START_TEST after completed state."""
+        machine = SlotStateMachine(slot_idx=0)
+
+        machine.trigger(SlotEvent.START_TEST)
+        machine.trigger(SlotEvent.CONFIGURE)
+        machine.trigger(SlotEvent.RUN)
+        machine.trigger(SlotEvent.COMPLETE)
+
+        assert machine.state == SlotState.COMPLETED
+
+        # COMPLETED 상태에서 바로 START_TEST 가능
+        machine.trigger(SlotEvent.START_TEST)
+
+        assert machine.state == SlotState.PREPARING
+        assert machine.context.current_loop == 0
