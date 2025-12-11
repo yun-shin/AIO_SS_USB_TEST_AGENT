@@ -21,8 +21,11 @@ class TestState:
         slot_idx: Test slot index.
         process_state: USB Test process state.
         test_phase: Current test phase.
-        current_loop: Current loop number.
-        total_loop: Total loop count.
+        current_loop: Current loop number (overall, across all batches).
+        total_loop: Total loop count (overall target).
+        loop_step: Loops per batch execution (MFC Client setting).
+        current_batch: Current batch iteration (1-based).
+        total_batch: Total batch iterations (loop_count / loop_step).
         pid: USB Test process PID.
         is_active: Test active state.
         started_at: Test start time.
@@ -38,6 +41,9 @@ class TestState:
     test_phase: TestPhase = TestPhase.UNKNOWN
     current_loop: int = 0
     total_loop: int = 0
+    loop_step: int = 1  # MFC Client에 설정되는 1회 실행 루프 횟수
+    current_batch: int = 0  # 현재 배치 반복 횟수 (1-based)
+    total_batch: int = 1  # 총 배치 반복 횟수
     pid: Optional[int] = None
     is_active: bool = False
 
@@ -69,6 +75,9 @@ class TestState:
             test_phase=kwargs.get("test_phase", self.test_phase),
             current_loop=kwargs.get("current_loop", self.current_loop),
             total_loop=kwargs.get("total_loop", self.total_loop),
+            loop_step=kwargs.get("loop_step", self.loop_step),
+            current_batch=kwargs.get("current_batch", self.current_batch),
+            total_batch=kwargs.get("total_batch", self.total_batch),
             pid=kwargs.get("pid", self.pid),
             is_active=kwargs.get("is_active", self.is_active),
             started_at=kwargs.get("started_at", self.started_at),
@@ -91,6 +100,31 @@ class TestState:
             current_loop=new_loop,
             estimated_remaining=remaining,
         )
+
+    def increment_batch(self) -> "TestState":
+        """Increment batch count and update current_loop.
+
+        Each batch completion adds loop_step to current_loop.
+
+        Returns:
+            New TestState with incremented batch.
+        """
+        new_batch = self.current_batch + 1
+        new_loop = min(new_batch * self.loop_step, self.total_loop)
+        remaining = self._calculate_remaining(new_loop)
+        return self.update(
+            current_batch=new_batch,
+            current_loop=new_loop,
+            estimated_remaining=remaining,
+        )
+
+    def is_batch_completed(self) -> bool:
+        """Check if all batches are completed.
+
+        Returns:
+            True if all batches completed.
+        """
+        return self.current_batch >= self.total_batch
 
     def set_error(self, error_message: str) -> "TestState":
         """Set error.
@@ -179,6 +213,9 @@ class TestState:
             "test_phase_name": self.test_phase.name,
             "current_loop": self.current_loop,
             "total_loop": self.total_loop,
+            "loop_step": self.loop_step,
+            "current_batch": self.current_batch,
+            "total_batch": self.total_batch,
             "pid": self.pid,
             "is_active": self.is_active,
             "started_at": self.started_at.isoformat() if self.started_at else None,
@@ -210,6 +247,9 @@ class TestState:
             test_phase=TestPhase(data.get("test_phase", TestPhase.UNKNOWN)),
             current_loop=data.get("current_loop", 0),
             total_loop=data.get("total_loop", 0),
+            loop_step=data.get("loop_step", 1),
+            current_batch=data.get("current_batch", 0),
+            total_batch=data.get("total_batch", 1),
             pid=data.get("pid"),
             is_active=data.get("is_active", False),
             started_at=started_at,

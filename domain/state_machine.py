@@ -27,6 +27,7 @@ class SlotState(str, Enum):
     PREPARING = "preparing"
     CONFIGURING = "configuring"
     RUNNING = "running"
+    WAITING = "waiting"  # Batch 완료 후 다음 batch 대기 상태
     PAUSED = "paused"
     STOPPING = "stopping"
     COMPLETED = "completed"
@@ -57,6 +58,11 @@ class SlotEvent(str, Enum):
     COMPLETE = "complete"
     FAIL = "fail"
     ERROR = "error"
+
+    # Batch events (for multi-iteration tests)
+    BATCH_COMPLETE = "batch_complete"  # Single batch iteration finished (-> WAITING)
+    BATCH_NEXT = "batch_next"  # Start next batch iteration (-> CONFIGURING)
+    ALL_BATCHES_DONE = "all_batches_done"  # All batches completed (-> COMPLETED)
 
     # Recovery events
     RESET = "reset"
@@ -94,8 +100,11 @@ class SlotContext:
         test_name: Current test name.
         process_state: USB Test process state.
         test_phase: Current test phase.
-        current_loop: Current loop number.
-        total_loop: Total loop count.
+        current_loop: Current loop number (overall progress).
+        total_loop: Total loop count (overall target).
+        loop_step: Loops per batch execution (MFC Client setting).
+        current_batch: Current batch iteration (1-based).
+        total_batch: Total batch iterations (total_loop / loop_step).
         started_at: Test start time.
         updated_at: Last update time.
         error_message: Last error message.
@@ -110,6 +119,9 @@ class SlotContext:
     test_phase: TestPhase = TestPhase.IDLE
     current_loop: int = 0
     total_loop: int = 0
+    loop_step: int = 1  # MFC Client에 설정되는 1회 실행 루프 횟수
+    current_batch: int = 0  # 현재 배치 반복 횟수 (1-based)
+    total_batch: int = 1  # 총 배치 반복 횟수
     started_at: Optional[datetime] = None
     updated_at: datetime = field(default_factory=datetime.now)
     error_message: Optional[str] = None
@@ -124,6 +136,9 @@ class SlotContext:
         """
         return SlotContext(
             slot_idx=self.slot_idx,
+            loop_step=1,
+            current_batch=0,
+            total_batch=1,
             updated_at=datetime.now(),
         )
 
@@ -144,6 +159,9 @@ class SlotContext:
             test_phase=kwargs.get("test_phase", self.test_phase),
             current_loop=kwargs.get("current_loop", self.current_loop),
             total_loop=kwargs.get("total_loop", self.total_loop),
+            loop_step=kwargs.get("loop_step", self.loop_step),
+            current_batch=kwargs.get("current_batch", self.current_batch),
+            total_batch=kwargs.get("total_batch", self.total_batch),
             started_at=kwargs.get("started_at", self.started_at),
             updated_at=datetime.now(),
             error_message=kwargs.get("error_message", self.error_message),
@@ -177,6 +195,9 @@ class SlotContext:
             "test_phase_name": self.test_phase.name,
             "current_loop": self.current_loop,
             "total_loop": self.total_loop,
+            "loop_step": self.loop_step,
+            "current_batch": self.current_batch,
+            "total_batch": self.total_batch,
             "started_at": self.started_at.isoformat() if self.started_at else None,
             "updated_at": self.updated_at.isoformat(),
             "progress_percent": self.get_progress_percent(),
@@ -253,6 +274,15 @@ class SlotStateMachine:
         Transition(SlotState.RUNNING, SlotEvent.FAIL, SlotState.FAILED),
         Transition(SlotState.RUNNING, SlotEvent.ERROR, SlotState.ERROR),
         Transition(SlotState.RUNNING, SlotEvent.DISCONNECTED, SlotState.ERROR),
+        # Batch: 1회 batch 완료 → WAITING 상태로 전이
+        Transition(SlotState.RUNNING, SlotEvent.BATCH_COMPLETE, SlotState.WAITING),
+
+        # Waiting transitions (batch 대기 상태)
+        Transition(SlotState.WAITING, SlotEvent.BATCH_NEXT, SlotState.CONFIGURING),
+        Transition(SlotState.WAITING, SlotEvent.ALL_BATCHES_DONE, SlotState.COMPLETED),
+        Transition(SlotState.WAITING, SlotEvent.STOP, SlotState.STOPPING),
+        Transition(SlotState.WAITING, SlotEvent.ERROR, SlotState.ERROR),
+        Transition(SlotState.WAITING, SlotEvent.FAIL, SlotState.FAILED),
 
         # Paused transitions
         Transition(SlotState.PAUSED, SlotEvent.RESUME, SlotState.RUNNING),

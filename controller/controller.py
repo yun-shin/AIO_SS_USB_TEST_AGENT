@@ -180,6 +180,10 @@ class MFCController:
     ) -> bool:
         """Start test on a specific slot.
 
+        MFC Client의 Loop 필드에는 loop_step 값을 설정합니다.
+        총 테스트 횟수(loop_count)를 loop_step으로 나눈 만큼 반복 실행해야 합니다.
+        반복 실행은 호출하는 쪽(Agent)에서 처리해야 합니다.
+
         Args:
             slot_idx: Slot index.
             config: Test configuration.
@@ -201,6 +205,8 @@ class MFCController:
             test_name=config.test_name,
             capacity=config.capacity,
             method=config.method,
+            loop_count=config.loop_count,
+            loop_step=config.loop_step,
         )
 
         # 슬롯 상태 업데이트
@@ -227,8 +233,9 @@ class MFCController:
             # 3. 테스트 방식 설정
             await self._set_method(slot_window, config.method)
 
-            # 4. 루프 카운트 설정
-            await self._set_loop_count(slot_window, config.loop_count)
+            # 4. 루프 카운트 설정 (loop_step 값을 MFC에 설정)
+            # loop_step이 MFC Client에 실제 설정되는 1회 실행 루프 횟수
+            await self._set_loop_count(slot_window, config.loop_step)
 
             # 5. 테스트 타입 설정
             await self._set_test_type(slot_window, config.test_type)
@@ -252,6 +259,56 @@ class MFCController:
             state.status = SlotStatus.ERROR
             state.error_message = str(e)
             logger.error("Failed to start test", slot_idx=slot_idx, error=str(e))
+            return False
+
+    async def continue_batch(self, slot_idx: int) -> bool:
+        """Continue to next batch iteration (Contact → Test only).
+
+        Used for batch mode where configuration is already set.
+        Only clicks Contact and Test buttons without reconfiguring.
+
+        Args:
+            slot_idx: Slot index.
+
+        Returns:
+            True if batch continuation started successfully.
+        """
+        if not self.is_slot_connected(slot_idx):
+            logger.error("Slot not connected", slot_idx=slot_idx)
+            return False
+
+        logger.info("Continuing batch", slot_idx=slot_idx)
+
+        state = self._slot_states.get(slot_idx)
+        if not state:
+            logger.error("Slot state not found", slot_idx=slot_idx)
+            return False
+
+        try:
+            slot_window = self._window_manager.get_slot_window(slot_idx)
+            if not slot_window or not slot_window.is_connected:
+                raise RuntimeError("Slot window not available")
+
+            # Batch 계속: Contact → Test만 실행 (설정은 이미 됨)
+            # 1. Contact 버튼 클릭
+            await self._click_contact_button(slot_window)
+
+            # Contact 완료 대기 및 Test 버튼 활성화 대기
+            await self._wait_for_test_button_enabled(slot_window, timeout=10.0)
+
+            # 2. Test 버튼 클릭
+            await self._click_start_button(slot_window)
+
+            state.status = SlotStatus.RUNNING
+            state.current_phase = "Batch Continue"
+            logger.info("Batch continued", slot_idx=slot_idx)
+
+            return True
+
+        except Exception as e:
+            state.status = SlotStatus.ERROR
+            state.error_message = str(e)
+            logger.error("Failed to continue batch", slot_idx=slot_idx, error=str(e))
             return False
 
     async def stop_test(self, slot_idx: int) -> bool:

@@ -13,6 +13,7 @@ from .process_monitor import (
     ProcessTerminationReason,
 )
 from .mfc_ui_monitor import MFCUIMonitor, MFCUIState, UIStateChange
+from .batch_executor import BatchExecutor, BatchExecutorManager, BatchProgress
 
 __all__ = [
     "TestExecutor",
@@ -25,4 +26,7 @@ __all__ = [
     "MFCUIMonitor",
     "MFCUIState",
     "UIStateChange",
+    "BatchExecutor",
+    "BatchExecutorManager",
+    "BatchProgress",
 ]

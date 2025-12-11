@@ -6,6 +6,7 @@ All dependencies are injected via DI Container.
 
 import asyncio
 import signal
+from typing import TYPE_CHECKING, Awaitable, Callable
 
 from config.constants import (
     AgentMessageType,
@@ -14,6 +15,11 @@ from config.constants import (
     SlotConfig,
 )
 from config.settings import get_settings
+
+# TYPE_CHECKING 블록: 순환 import 방지
+if TYPE_CHECKING:
+    from domain.models.test_config import TestConfig
+    from services.batch_executor import BatchProgress
 
 # Controller - MFC Controller
 from controller.controller import MFCController
@@ -57,6 +63,7 @@ from services import (
     TestExecutor,
     UIStateChange,
 )
+from services.batch_executor import BatchExecutor, BatchExecutorManager, BatchProgress
 from utils.logging import bind_context, get_ilogger, get_logger, setup_logging
 
 logger = get_logger(__name__)
@@ -345,6 +352,9 @@ class Agent:
     ) -> None:
         """Callback when slot state changes.
 
+        Internal state machine transitions.
+        Only final states are reported to Backend.
+
         Args:
             slot_idx: Slot index.
             old_state: Previous state.
@@ -357,20 +367,9 @@ class Agent:
             new_state=new_state.value,
         )
 
-        # 상태 변경 시 WebSocket으로 전송 (비동기 태스크로 실행)
-        if self._ws_client and self._slot_manager:
-            machine = self._slot_manager.get(slot_idx)
-            if machine:
-                asyncio.create_task(
-                    self._ws_client.send_state_update(
-                        slot_idx=slot_idx,
-                        state_data={
-                            "status": new_state.value,
-                            "previous_status": old_state.value,
-                            **machine.context.to_dict(),
-                        },
-                    )
-                )
+        # 내부 상태 전이는 Backend에 전송하지 않음
+        # BatchExecutor와 MFC UI Monitor가 적절한 시점에 전송
+        # 여기서는 모니터링 활성화/비활성화만 처리
 
         # 상태가 RUNNING으로 전환되면 모니터링 활성화
         if new_state == SlotState.RUNNING:
@@ -510,22 +509,71 @@ class Agent:
         Sends current state to Backend regardless of changes.
         This ensures real-time progress updates.
 
+        For batch mode:
+        - Status remains 'running' until all batches complete
+        - Loop values are calculated based on batch progress, not MFC values
+
         Args:
             state: Current MFC UI state.
         """
-        # Frontend status 결정
-        # - Pass: 테스트 진행 중 (성공적으로 진행) -> running
-        # - Test: 테스트 진행 중 -> running
-        # - Fail: 테스트 실패 -> failed
-        # - Idle: 대기 상태 (loop 완료 시 completed)
-        # - Stop: 중지됨 -> stopping
-        status = self._determine_status(state)
+        if not self._ws_client or not self._slot_manager:
+            return
 
-        # Backend에 현재 상태 전송 (매 폴링마다)
-        # Backend/Frontend가 바로 사용할 수 있는 필드명 사용
-        if self._ws_client:
+        slot_idx = state.slot_idx
+
+        # 슬롯 상태 머신에서 batch 정보 가져오기
+        try:
+            slot_machine = self._slot_manager.get(slot_idx)
+            if not slot_machine:
+                return
+            context = slot_machine.context
+        except (KeyError, AttributeError):
+            return
+
+        # Batch 모드 여부 확인 (total_batch > 1)
+        is_batch_mode = context.total_batch > 1
+
+        if is_batch_mode:
+            # Batch 모드: 계산된 값 사용
+            # current_loop = (current_batch - 1) * loop_step + mfc_current_loop
+            calculated_loop = (
+                (context.current_batch - 1) * context.loop_step
+                + state.current_loop
+            )
+            # total_loop는 전체 loop_count 사용
+            total_loop = context.total_loop
+
+            # 진행률 계산
+            progress_percent = (
+                (calculated_loop / total_loop) * 100 if total_loop > 0 else 0
+            )
+
+            # 상태는 running 유지 (fail/error 제외)
+            if state.process_state == ProcessState.FAIL:
+                status = "failed"
+            elif state.process_state == ProcessState.STOP:
+                status = "stopping"
+            else:
+                # PASS, TEST, IDLE 모두 running으로 (batch 진행 중)
+                status = "running"
+
             await self._ws_client.send_state_update(
-                slot_idx=state.slot_idx,
+                slot_idx=slot_idx,
+                state_data={
+                    "status": status,
+                    "progress": progress_percent,
+                    "current_loop": calculated_loop,
+                    "total_loop": total_loop,
+                    "current_batch": context.current_batch,
+                    "total_batch": context.total_batch,
+                    "current_phase": state.test_phase.name,
+                },
+            )
+        else:
+            # 단일 실행 모드: 기존 방식
+            status = self._determine_status(state)
+            await self._ws_client.send_state_update(
+                slot_idx=slot_idx,
                 state_data={
                     "status": status,
                     "progress": state.progress_percent,
@@ -538,6 +586,9 @@ class Agent:
     async def _on_mfc_ui_changed(self, change: UIStateChange) -> None:
         """Callback when MFC UI state changes.
 
+        Note: State updates are sent via _on_mfc_ui_polled for consistency.
+        This callback is primarily for logging significant changes.
+
         Args:
             change: UI state change event.
         """
@@ -547,21 +598,21 @@ class Agent:
             changed_fields=change.changed_fields,
         )
 
-        # Backend에 UI 상태 업데이트 전송
-        # Backend/Frontend가 바로 사용할 수 있는 필드명 사용
-        if self._ws_client and change.current_state:
-            state = change.current_state
-            status = self._determine_status(state)
-            await self._ws_client.send_state_update(
+        # 상태 변경은 _on_mfc_ui_polled에서 전송하므로 여기서는 로깅만
+        # 단, FAIL 상태 변경은 즉시 알림 (중요한 이벤트)
+        if change.current_state and change.current_state.process_state == ProcessState.FAIL:
+            logger.warning(
+                "Test FAIL detected",
                 slot_idx=change.slot_idx,
-                state_data={
-                    "status": status,
-                    "progress": state.progress_percent,
-                    "current_loop": state.current_loop,
-                    "total_loop": state.total_loop,
-                    "current_phase": state.test_phase.name,
-                },
             )
+            if self._ws_client:
+                await self._ws_client.send_state_update(
+                    slot_idx=change.slot_idx,
+                    state_data={
+                        "status": "failed",
+                        "error": "Test failed",
+                    },
+                )
 
     async def _on_mfc_test_completed(
         self,
@@ -573,6 +624,13 @@ class Agent:
         This is triggered by the UI monitor when process state
         changes from TEST to PASS/FAIL/STOP.
 
+        In batch mode:
+        - PASS: Single batch completed, don't notify Backend (BatchExecutor handles it)
+        - FAIL/STOP: Immediately notify Backend (error situation)
+
+        In single mode:
+        - Notify Backend of completion
+
         Args:
             slot_idx: Slot index.
             final_state: Final process state.
@@ -583,37 +641,76 @@ class Agent:
             final_state=final_state.name,
         )
 
-        # 슬롯 상태 머신 업데이트
+        # 슬롯 상태 머신에서 batch 정보 확인
+        is_batch_mode = False
+        if self._slot_manager:
+            try:
+                slot_machine = self._slot_manager.get(slot_idx)
+                if slot_machine:
+                    context = slot_machine.context
+                    is_batch_mode = context.total_batch > 1
+            except (KeyError, AttributeError):
+                pass
+
+        # Batch 모드에서 PASS는 단일 배치 완료 → BatchExecutor가 처리하므로 무시
+        if is_batch_mode and final_state == ProcessState.PASS:
+            logger.debug(
+                "Batch iteration PASS detected, BatchExecutor will handle",
+                slot_idx=slot_idx,
+            )
+            # State machine 전이하지 않음 - BatchExecutor가 BATCH_COMPLETE 이벤트 처리
+            return
+
+        # FAIL/STOP은 즉시 처리 (에러 상황)
         if self._slot_manager:
             try:
                 slot_machine = self._slot_manager.get(slot_idx)
                 if slot_machine and slot_machine.state == SlotState.RUNNING:
-                    if final_state == ProcessState.PASS:
-                        slot_machine.trigger(SlotEvent.COMPLETE)
-                    elif final_state == ProcessState.FAIL:
+                    if final_state == ProcessState.FAIL:
                         slot_machine.trigger(
                             SlotEvent.FAIL,
                             error_message="Test failed (detected via UI)",
                         )
                     elif final_state == ProcessState.STOP:
                         slot_machine.trigger(SlotEvent.STOPPED)
+                    elif final_state == ProcessState.PASS and not is_batch_mode:
+                        # 단일 모드에서만 COMPLETE 처리
+                        slot_machine.trigger(SlotEvent.COMPLETE)
             except InvalidTransitionError as e:
                 logger.warning(
                     "Could not transition state on test completion",
                     error=str(e),
                 )
 
-        # Backend에 테스트 완료 알림
+        # Backend에 알림 (FAIL/STOP 또는 단일 모드 완료 시에만)
         if self._ws_client:
-            success = final_state == ProcessState.PASS
-            await self._ws_client.send_test_completed(
-                slot_idx=slot_idx,
-                success=success,
-                result_data={
-                    "final_state": final_state.name,
-                    "detected_via": "mfc_ui_monitor",
-                },
-            )
+            if final_state == ProcessState.FAIL:
+                await self._ws_client.send_state_update(
+                    slot_idx=slot_idx,
+                    state_data={
+                        "status": "failed",
+                        "error": "Test failed",
+                        "final_state": final_state.name,
+                    },
+                )
+            elif final_state == ProcessState.STOP:
+                await self._ws_client.send_state_update(
+                    slot_idx=slot_idx,
+                    state_data={
+                        "status": "stopped",
+                        "final_state": final_state.name,
+                    },
+                )
+            elif not is_batch_mode:
+                # 단일 모드 완료
+                await self._ws_client.send_test_completed(
+                    slot_idx=slot_idx,
+                    success=True,
+                    result_data={
+                        "final_state": final_state.name,
+                        "detected_via": "mfc_ui_monitor",
+                    },
+                )
 
     async def _on_user_intervention(
         self,
@@ -769,6 +866,7 @@ class Agent:
                 method=test_config.get("method", "0HR"),
                 test_type=test_config.get("test_type", "Photo"),
                 loop_count=test_config.get("loop_count", 1),
+                loop_step=test_config.get("loop_step", 1),
                 test_name=test_config.get("test_name", "USB Test"),
             )
 
@@ -776,22 +874,67 @@ class Agent:
             if slot_machine.state == SlotState.PREPARING:
                 slot_machine.trigger(SlotEvent.CONFIGURE)
 
-            # Execute test using MFC Controller
-            success = await self._mfc_controller.start_test(slot_idx, config)
+            # Batch 실행 여부 결정 (loop_step < loop_count면 batch 모드)
+            total_batch = (config.loop_count + config.loop_step - 1) // config.loop_step
 
-            if success:
-                # State transition: RUN
-                slot_machine.trigger(
-                    SlotEvent.RUN,
-                    context_update={
-                        "total_loop": test_config.get("loop_count", 1),
-                    },
+            if total_batch > 1:
+                # Batch 모드: BatchExecutor 사용
+                logger.info(
+                    "Starting batch test execution",
+                    slot_idx=slot_idx,
+                    total_loop=config.loop_count,
+                    loop_step=config.loop_step,
+                    total_batch=total_batch,
+                )
+
+                # BatchExecutor 생성 및 실행
+                batch_executor = BatchExecutor(
+                    controller=self._mfc_controller,
+                    state_machine=slot_machine,
+                )
+
+                # Progress callback: WebSocket으로 진행 상황 전송
+                async def on_batch_progress(progress: BatchProgress) -> None:
+                    if self._ws_client:
+                        await self._ws_client.send_state_update(
+                            slot_idx=progress.slot_idx,
+                            state_data={
+                                "status": "running",
+                                "current_batch": progress.current_batch,
+                                "total_batch": progress.total_batch,
+                                "current_loop": progress.current_loop,
+                                "total_loop": progress.total_loop,
+                                "loop_step": progress.loop_step,
+                                "progress_percent": progress.progress_percent,
+                            },
+                        )
+
+                # Batch 실행 (백그라운드 태스크로)
+                asyncio.create_task(
+                    self._run_batch_test(
+                        slot_idx=slot_idx,
+                        config=config,
+                        batch_executor=batch_executor,
+                        on_progress=on_batch_progress,
+                    )
                 )
             else:
-                slot_machine.trigger(
-                    SlotEvent.ERROR,
-                    error_message="테스트 시작에 실패했습니다.",
-                )
+                # 단일 실행 모드: 기존 방식
+                success = await self._mfc_controller.start_test(slot_idx, config)
+
+                if success:
+                    # State transition: RUN
+                    slot_machine.trigger(
+                        SlotEvent.RUN,
+                        context_update={
+                            "total_loop": config.loop_count,
+                        },
+                    )
+                else:
+                    slot_machine.trigger(
+                        SlotEvent.ERROR,
+                        error_message="테스트 시작에 실패했습니다.",
+                    )
 
         except InvalidTransitionError as e:
             logger.error(
@@ -811,6 +954,70 @@ class Agent:
                 slot_machine.trigger(SlotEvent.ERROR, error_message=str(e))
             except InvalidTransitionError:
                 slot_machine.force_state(SlotState.ERROR, f"Exception: {e}")
+
+    async def _run_batch_test(
+        self,
+        slot_idx: int,
+        config: "TestConfig",  # noqa: F821
+        batch_executor: BatchExecutor,
+        on_progress: "Callable[[BatchProgress], Awaitable[None]]",  # noqa: F821
+    ) -> None:
+        """Run batch test in background.
+
+        Executes batch test with multiple iterations.
+
+        Args:
+            slot_idx: Slot index.
+            config: Test configuration.
+            batch_executor: Batch executor instance.
+            on_progress: Progress callback.
+        """
+        try:
+            success = await batch_executor.execute(
+                slot_idx=slot_idx,
+                config=config,
+                on_progress=on_progress,
+            )
+
+            if success:
+                logger.info(
+                    "Batch test completed successfully",
+                    slot_idx=slot_idx,
+                    total_loop=config.loop_count,
+                )
+                if self._ws_client:
+                    await self._ws_client.send_state_update(
+                        slot_idx=slot_idx,
+                        state_data={
+                            "status": "completed",
+                            "message": "All batches completed",
+                        },
+                    )
+            else:
+                logger.warning(
+                    "Batch test failed or cancelled",
+                    slot_idx=slot_idx,
+                )
+                if self._ws_client:
+                    await self._ws_client.send_state_update(
+                        slot_idx=slot_idx,
+                        state_data={
+                            "status": "failed",
+                            "message": "Batch test failed or cancelled",
+                        },
+                    )
+        except Exception as e:
+            logger.error(
+                "Batch test error",
+                slot_idx=slot_idx,
+                error=str(e),
+            )
+            if self._slot_manager:
+                try:
+                    slot_machine = self._slot_manager[slot_idx]
+                    slot_machine.trigger(SlotEvent.ERROR, error_message=str(e))
+                except (KeyError, InvalidTransitionError):
+                    pass
 
     async def _handle_stop_test(self, data: dict) -> None:
         """Handle stop test command.
@@ -851,13 +1058,25 @@ class Agent:
             success = await self._mfc_controller.stop_test(slot_idx)
 
             if success:
-                # State transition: STOPPED
-                slot_machine.trigger(SlotEvent.STOPPED)
+                # State transition: STOPPED (if still in STOPPING state)
+                if slot_machine.can_transition(SlotEvent.STOPPED):
+                    slot_machine.trigger(SlotEvent.STOPPED)
+
+                # Backend에 stopped 상태 전송
+                if self._ws_client:
+                    await self._ws_client.send_state_update(
+                        slot_idx=slot_idx,
+                        state_data={
+                            "status": "stopped",
+                            "message": "Test stopped by user",
+                        },
+                    )
             else:
-                slot_machine.trigger(
-                    SlotEvent.ERROR,
-                    error_message="테스트 중지에 실패했습니다.",
-                )
+                if slot_machine.can_transition(SlotEvent.ERROR):
+                    slot_machine.trigger(
+                        SlotEvent.ERROR,
+                        error_message="테스트 중지에 실패했습니다.",
+                    )
 
         except InvalidTransitionError as e:
             logger.error(
@@ -867,9 +1086,9 @@ class Agent:
             )
         except Exception as e:
             logger.error("Failed to stop test", slot_idx=slot_idx, error=str(e))
-            try:
+            if slot_machine.can_transition(SlotEvent.ERROR):
                 slot_machine.trigger(SlotEvent.ERROR, error_message=str(e))
-            except InvalidTransitionError:
+            else:
                 slot_machine.force_state(SlotState.ERROR, f"Stop exception: {e}")
 
     async def _handle_config_update(self, data: dict) -> None:
