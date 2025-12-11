@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Optional
 
-from ..enums import TestCapacity, TestMethod, TestType, VendorId
+from domain.enums import TestCapacity, TestMethod, TestType, VendorId
 
 
 @dataclass

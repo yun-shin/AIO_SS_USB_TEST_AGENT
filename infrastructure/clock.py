@@ -7,7 +7,7 @@ import asyncio
 import time
 from datetime import datetime
 
-from ..core.protocols import IClock
+from core.protocols import IClock
 
 
 class SystemClock(IClock):

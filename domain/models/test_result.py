@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Optional
 
-from ..enums import ErrorCode
+from domain.enums import ErrorCode
 
 
 @dataclass

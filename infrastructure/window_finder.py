@@ -10,13 +10,13 @@ from pywinauto import Application
 from pywinauto.findwindows import ElementNotFoundError
 from pywinauto.controls.uiawrapper import UIAWrapper
 
-from ..core.protocols import (
+from core.protocols import (
     IWindowFinder,
     IWindowHandle,
     IProcessHandle,
     IControlHandle,
 )
-from ..core.exceptions import (
+from core.exceptions import (
     WindowNotFoundError,
     ProcessNotFoundError,
     ControlNotFoundError,

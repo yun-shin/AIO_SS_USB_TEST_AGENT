@@ -10,13 +10,13 @@ from typing import Generator, Any
 import pytest
 
 # Config
-from src.config.settings import AgentSettings
-from src.domain.models import TestConfig, TestState
-from src.config.constants import TestCapacity, TestMethod, TestType, VendorId
+from config.settings import AgentSettings
+from domain.models import TestConfig, TestState
+from config.constants import TestCapacity, TestMethod, TestType, VendorId
 
 # Core
-from src.core.container import Container, set_container, reset_container
-from src.core.protocols import (
+from core.container import Container, set_container, reset_container
+from core.protocols import (
     IWindowFinder,
     IStateStore,
     IClock,
@@ -24,17 +24,17 @@ from src.core.protocols import (
 )
 
 # Infrastructure (Fake implementations)
-from src.infrastructure.clock import FakeClock
-from src.infrastructure.state_store import FakeStateStore
-from src.infrastructure.window_finder import (
+from infrastructure.clock import FakeClock
+from infrastructure.state_store import FakeStateStore
+from infrastructure.window_finder import (
     FakeWindowFinder,
     FakeWindowHandle,
     FakeControlHandle,
 )
 
 # Services
-from src.services.test_executor import TestExecutor, TestRequest
-from src.services.state_monitor import StateMonitor
+from services.test_executor import TestExecutor, TestRequest
+from services.state_monitor import StateMonitor
 
 
 # ============================================================
@@ -87,7 +87,7 @@ def agent_settings() -> AgentSettings:
         health_report_path="C:/Test/HealthReport.exe",
         max_slots=4,
         backend_url="http://localhost:8000",
-        backend_ws_url="ws://localhost:8000/ws",
+        backend_ws_url="ws://localhost:8000/api/agent/ws",
     )
 
 

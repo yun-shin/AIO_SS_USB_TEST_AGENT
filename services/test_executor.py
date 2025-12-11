@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from typing import Optional, Callable, Awaitable
 from enum import Enum
 
-from ..core.protocols import (
+from core.protocols import (
     IWindowFinder,
     IWindowHandle,
     IControlHandle,
@@ -17,7 +17,7 @@ from ..core.protocols import (
     IClock,
     ILogger,
 )
-from ..core.exceptions import (
+from core.exceptions import (
     WindowNotFoundError,
     ControlNotFoundError,
     TestStartError,

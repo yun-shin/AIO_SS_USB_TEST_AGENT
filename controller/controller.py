@@ -7,19 +7,19 @@ Handles test start, stop, state monitoring, etc.
 import asyncio
 from typing import Optional
 
-from ..config.settings import get_settings
-from ..config.constants import (
+from config.settings import get_settings
+from config.constants import (
     TestCapacity,
     TestMethod,
     TestType,
     ProcessState,
     SlotConfig,
 )
-from ..domain.models.test_config import TestConfig
-from ..domain.models.test_state import SlotStatus, TestState
-from ..utils.logging import get_logger
-from .window_manager import WindowManager
-from .control_wrapper import ControlWrapper
+from domain.models.test_config import TestConfig
+from domain.models.test_state import SlotStatus, TestState
+from utils.logging import get_logger
+from controller.window_manager import WindowManager
+from controller.control_wrapper import ControlWrapper
 
 logger = get_logger(__name__)
 

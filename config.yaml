@@ -1,0 +1,16 @@
+# SS USB Test Agent 설정 파일
+# 이 파일을 수정하여 Agent 설정을 변경할 수 있습니다.
+# 설치 후 위치: %APPDATA%\SS USB Test Agent\config.yaml
+#
+# 참고: 이 파일에 값이 있으면 해당 값을 사용하고,
+#       없으면 .env 파일 또는 환경 변수의 기본값을 사용합니다.
+
+# =============================================================================
+# USB Test 프로그램 경로 설정
+# =============================================================================
+paths:
+  # USB Test.exe 실행 파일 경로
+  usb_test_exe: "C:/USB_Test/USB Test.exe"
+
+  # Card_HealthReport.exe 실행 파일 경로
+  health_report_exe: "C:/USB_Test/Card_HealthReport.exe"

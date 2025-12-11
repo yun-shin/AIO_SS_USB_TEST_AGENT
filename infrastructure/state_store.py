@@ -8,7 +8,7 @@ from threading import Lock
 from dataclasses import dataclass, field
 from datetime import datetime
 
-from ..core.protocols import IStateStore
+from core.protocols import IStateStore
 
 
 @dataclass

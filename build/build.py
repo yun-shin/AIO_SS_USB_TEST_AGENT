@@ -4,17 +4,18 @@
 This script automates the build process:
 1. Clean previous builds
 2. Run PyInstaller to create executable
-3. Run Inno Setup to create installer (optional)
+3. Run Inno Setup to create installer
 
 Usage:
-    python build/build.py              # PyInstaller only
-    python build/build.py --installer  # PyInstaller + Inno Setup
+    python build/build.py              # PyInstaller + Inno Setup (full build)
+    python build/build.py --no-installer  # PyInstaller only (no installer)
+    python build/build.py --installer-only  # Inno Setup only (skip PyInstaller)
     python build/build.py --clean      # Clean build artifacts
     python build/build.py --nuitka     # Use Nuitka (future)
 
 Requirements:
     - pyinstaller (pip install pyinstaller)
-    - Inno Setup 6.x (for --installer option)
+    - Inno Setup 6.x (https://jrsoftware.org/isdl.php)
 """
 
 import argparse
@@ -144,7 +145,7 @@ def build_nuitka() -> bool:
         # 포함할 패키지
         "--include-package=pywinauto",
         "--include-package=pydantic",
-        "--include-package=structlog",
+        # structlog removed - using standard logging
 
         # 제외할 패키지
         "--nofollow-import-to=pytest",
@@ -198,19 +199,19 @@ def main() -> int:
         help="Clean build artifacts"
     )
     parser.add_argument(
-        "--installer",
+        "--no-installer",
         action="store_true",
-        help="Build installer (requires Inno Setup)"
+        help="Skip installer build (PyInstaller only)"
+    )
+    parser.add_argument(
+        "--installer-only",
+        action="store_true",
+        help="Build installer only (skip PyInstaller)"
     )
     parser.add_argument(
         "--nuitka",
         action="store_true",
         help="Use Nuitka instead of PyInstaller"
-    )
-    parser.add_argument(
-        "--skip-build",
-        action="store_true",
-        help="Skip PyInstaller/Nuitka build (installer only)"
     )
 
     args = parser.parse_args()
@@ -218,14 +219,14 @@ def main() -> int:
     print(f"SS USB Test Agent Build Script v{VERSION}")
     print("=" * 50)
 
-    # 정리
+    # 정리만 수행
     if args.clean:
         clean_build()
-        if not args.installer and not args.nuitka:
+        if not args.installer_only:
             return 0
 
-    # 빌드
-    if not args.skip_build:
+    # 빌드 (installer-only가 아닌 경우)
+    if not args.installer_only:
         clean_build()
 
         if args.nuitka:
@@ -240,8 +241,8 @@ def main() -> int:
         print("\n✓ Build successful!")
         print(f"  Output: {DIST_DIR / APP_NAME}")
 
-    # 설치 프로그램 생성
-    if args.installer:
+    # 설치 프로그램 생성 (no-installer가 아닌 경우)
+    if not args.no_installer:
         if not build_installer():
             print("\n!!! Installer build failed !!!")
             return 1

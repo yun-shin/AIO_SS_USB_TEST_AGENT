@@ -16,8 +16,8 @@ from tenacity import (
 from pywinauto.controls.uiawrapper import UIAWrapper
 from pywinauto.findwindows import ElementNotFoundError
 
-from ..config.constants import TimeoutConfig
-from ..utils.logging import get_logger
+from config.constants import TimeoutConfig
+from utils.logging import get_logger
 
 logger = get_logger(__name__)
 
@@ -88,16 +88,16 @@ class ControlWrapper:
             Success status.
         """
         if not self.exists:
-            logger.warning("Control not found for click", name=self._name)
+            logger.warning("Control not found for click", control_name=self._name)
             return False
 
         try:
             self._control.click_input()
-            logger.debug("Clicked control", name=self._name)
+            logger.debug("Clicked control", control_name=self._name)
             await asyncio.sleep(0.1)  # UI 반응 대기
             return True
         except Exception as e:
-            logger.error("Click failed", name=self._name, error=str(e))
+            logger.error("Click failed", control_name=self._name, error=str(e))
             raise
 
     @retry(
@@ -112,16 +112,16 @@ class ControlWrapper:
             Success status.
         """
         if not self.exists:
-            logger.warning("Control not found for double click", name=self._name)
+            logger.warning("Control not found for double click", control_name=self._name)
             return False
 
         try:
             self._control.double_click_input()
-            logger.debug("Double clicked control", name=self._name)
+            logger.debug("Double clicked control", control_name=self._name)
             await asyncio.sleep(0.1)
             return True
         except Exception as e:
-            logger.error("Double click failed", name=self._name, error=str(e))
+            logger.error("Double click failed", control_name=self._name, error=str(e))
             raise
 
     @retry(
@@ -140,17 +140,17 @@ class ControlWrapper:
             Success status.
         """
         if not self.exists:
-            logger.warning("Control not found for set_text", name=self._name)
+            logger.warning("Control not found for set_text", control_name=self._name)
             return False
 
         try:
             if clear_first:
                 self._control.set_edit_text("")
             self._control.type_keys(text, with_spaces=True)
-            logger.debug("Set text on control", name=self._name, text=text)
+            logger.debug("Set text on control", control_name=self._name, text=text)
             return True
         except Exception as e:
-            logger.error("Set text failed", name=self._name, error=str(e))
+            logger.error("Set text failed", control_name=self._name, error=str(e))
             raise
 
     @retry(
@@ -168,7 +168,7 @@ class ControlWrapper:
             Success status.
         """
         if not self.exists:
-            logger.warning("Control not found for select_item", name=self._name)
+            logger.warning("Control not found for select_item", control_name=self._name)
             return False
 
         try:
@@ -176,11 +176,11 @@ class ControlWrapper:
                 self._control.select(item)
             else:
                 self._control.select(item)
-            logger.debug("Selected item", name=self._name, item=item)
+            logger.debug("Selected item", control_name=self._name, item=item)
             await asyncio.sleep(0.1)
             return True
         except Exception as e:
-            logger.error("Select item failed", name=self._name, error=str(e))
+            logger.error("Select item failed", control_name=self._name, error=str(e))
             raise
 
     @retry(
@@ -198,17 +198,17 @@ class ControlWrapper:
             Success status.
         """
         if not self.exists:
-            logger.warning("Control not found for set_checkbox", name=self._name)
+            logger.warning("Control not found for set_checkbox", control_name=self._name)
             return False
 
         try:
             current_state = self._control.get_toggle_state()
             if (checked and current_state == 0) or (not checked and current_state == 1):
                 self._control.toggle()
-            logger.debug("Set checkbox", name=self._name, checked=checked)
+            logger.debug("Set checkbox", control_name=self._name, checked=checked)
             return True
         except Exception as e:
-            logger.error("Set checkbox failed", name=self._name, error=str(e))
+            logger.error("Set checkbox failed", control_name=self._name, error=str(e))
             raise
 
     async def wait_for_enabled(

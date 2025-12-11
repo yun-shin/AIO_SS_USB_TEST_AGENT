@@ -10,8 +10,8 @@ from typing import Optional
 from pywinauto import Application
 from pywinauto.findwindows import ElementNotFoundError
 
-from ..config.constants import TimeoutConfig
-from ..utils.logging import get_logger
+from config.constants import TimeoutConfig
+from utils.logging import get_logger
 
 logger = get_logger(__name__)
 

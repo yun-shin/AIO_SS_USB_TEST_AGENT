@@ -72,13 +72,18 @@ Name: "startupicon"; Description: "Windows 시작 시 자동 실행"; GroupDescr
 ; PyInstaller로 생성된 파일들
 Source: "..\dist\SS_USB_Test_Agent\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
-; 설정 파일 (사용자 데이터 폴더에)
-Source: "..\dist\SS_USB_Test_Agent\.env.example"; DestDir: "{userappdata}\{#MyAppName}"; DestName: ".env.example"; Flags: ignoreversion
+; YAML 설정 파일 (사용자가 수정 가능) - 기존 파일이 없을 때만 복사
+Source: "..\config.yaml"; DestDir: "{userappdata}\{#MyAppName}"; Flags: ignoreversion onlyifdoesntexist
+
+; YAML 설정 파일 (앱 디렉토리에도 복사 - 기본값 참조용)
+Source: "..\config.yaml"; DestDir: "{app}"; DestName: "config.yaml.default"; Flags: ignoreversion
+
+; .env 파일은 더 이상 설치하지 않음 (YAML로 대체)
+; Source: "..\.env"; DestDir: "{userappdata}\{#MyAppName}"; DestName: ".env"; Flags: ignoreversion onlyifdoesntexist
 
 [Dirs]
 ; 로그 디렉토리 생성
 Name: "{userappdata}\{#MyAppName}\logs"; Permissions: users-modify
-Name: "{userappdata}\{#MyAppName}\config"; Permissions: users-modify
 
 [Icons]
 ; 시작 메뉴 바로가기
@@ -132,22 +137,23 @@ begin
   end;
 end;
 
-// 설치 완료 후 .env 파일 생성 안내
+// 설치 완료 후 config.yaml 파일 안내
 procedure CurStepChanged(CurStep: TSetupStep);
 var
-  EnvPath: String;
+  ConfigPath: String;
 begin
   if CurStep = ssPostInstall then
   begin
-    EnvPath := ExpandConstant('{userappdata}\{#MyAppName}');
+    ConfigPath := ExpandConstant('{userappdata}\{#MyAppName}');
 
-    // .env 파일이 없으면 .env.example 복사
-    if not FileExists(EnvPath + '\.env') then
+    // config.yaml 파일 존재 확인
+    if FileExists(ConfigPath + '\config.yaml') then
     begin
-      if FileExists(EnvPath + '\.env.example') then
-      begin
-        FileCopy(EnvPath + '\.env.example', EnvPath + '\.env', False);
-      end;
+      // 설정 파일 위치 안내
+      MsgBox('설정 파일이 생성되었습니다:'#13#10#13#10 +
+             ConfigPath + '\config.yaml'#13#10#13#10 +
+             '이 파일을 편집하여 USB Test 프로그램 경로 등을 변경할 수 있습니다.',
+             mbInformation, MB_OK);
     end;
   end;
 end;

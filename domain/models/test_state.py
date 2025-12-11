@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Optional
 
-from ..enums import ProcessState, TestPhase
+from domain.enums import ProcessState, TestPhase
 
 
 @dataclass

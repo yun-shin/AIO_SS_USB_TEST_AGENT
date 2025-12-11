@@ -3,7 +3,15 @@
 Defines test-related constants and enumerations.
 """
 
-from enum import IntEnum, StrEnum
+from enum import Enum, IntEnum
+
+
+# Python 3.10 호환성을 위한 StrEnum 대체
+class StrEnum(str, Enum):
+    """String enumeration compatible with Python 3.10+."""
+
+    def __str__(self) -> str:
+        return self.value
 
 
 class TestCapacity(StrEnum):

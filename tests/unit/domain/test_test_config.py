@@ -1,8 +1,8 @@
 """Tests for TestConfig Model."""
 
 import pytest
-from src.domain.models import TestConfig
-from src.config.constants import TestCapacity, TestMethod, TestType, VendorId
+from domain.models import TestConfig
+from config.constants import TestCapacity, TestMethod, TestType, VendorId
 
 
 class TestTestConfig:

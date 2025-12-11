@@ -15,14 +15,14 @@ import websockets
 from websockets.client import WebSocketClientProtocol
 from websockets.exceptions import ConnectionClosed, WebSocketException
 
-from ...config.settings import AgentSettings, get_settings
-from ...config.constants import (
+from config.settings import AgentSettings, get_settings
+from config.constants import (
     AgentMessageType,
     BackendMessageType,
     AgentState,
     TimeoutConfig,
 )
-from ...utils.logging import get_logger
+from utils.logging import get_logger
 
 logger = get_logger(__name__)
 
@@ -115,15 +115,37 @@ class WebSocketClient:
         )
 
         try:
+            # 인증 헤더 설정
+            headers = {
+                "X-Agent-ID": self._agent_id,
+                "X-PC-Name": self._pc_name,
+            }
+
+            # WebSocket URL 구성 (Query parameter로 인증 토큰 전달)
+            # 모범사례: WebSocket handshake 시 헤더 접근이 제한되는 환경이 있으므로
+            # Query parameter와 Header 양쪽에 인증 정보 전달
+            ws_url = self._settings.backend_ws_url
+            if self._settings.api_key:
+                # URL에 token query parameter 추가
+                separator = "&" if "?" in ws_url else "?"
+                ws_url = f"{ws_url}{separator}token={self._settings.api_key}"
+                # Header에도 추가 (백업)
+                headers["Authorization"] = f"Bearer {self._settings.api_key}"
+                headers["X-API-Key"] = self._settings.api_key
+                logger.debug(
+                    "Auth configured",
+                    has_api_key=True,
+                    api_key_prefix=self._settings.api_key[:10] + "...",
+                )
+            else:
+                logger.warning("No API key configured - connection may be rejected")
+
             self._ws = await asyncio.wait_for(
                 websockets.connect(
-                    self._settings.backend_ws_url,
+                    ws_url,
                     ping_interval=TimeoutConfig.WEBSOCKET_PING_INTERVAL,
                     ping_timeout=TimeoutConfig.WEBSOCKET_PING_TIMEOUT,
-                    extra_headers={
-                        "X-Agent-ID": self._agent_id,
-                        "X-PC-Name": self._pc_name,
-                    },
+                    additional_headers=headers,
                 ),
                 timeout=TimeoutConfig.WEBSOCKET_CONNECT_TIMEOUT,
             )

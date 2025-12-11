@@ -8,13 +8,13 @@ import asyncio
 import signal
 from typing import Optional
 
-from .config.settings import get_settings
-from .config.constants import BackendMessageType
-from .interface.websocket.client import WebSocketClient
-from .utils.logging import setup_logging, get_logger, bind_context
+from config.settings import get_settings
+from config.constants import BackendMessageType
+from interface.websocket.client import WebSocketClient
+from utils.logging import setup_logging, get_logger, bind_context, get_ilogger
 
 # Core - DI Container & Protocols
-from .core import (
+from core import (
     Container,
     get_container,
     IWindowFinder,
@@ -23,14 +23,14 @@ from .core import (
 )
 
 # Infrastructure - 실제 구현체
-from .infrastructure import (
+from infrastructure import (
     SystemClock,
     PywinautoWindowFinder,
     InMemoryStateStore,
 )
 
 # Services - 비즈니스 로직
-from .services import TestExecutor, StateMonitor
+from services import TestExecutor, StateMonitor
 
 logger = get_logger(__name__)
 
@@ -119,7 +119,7 @@ class Agent:
 
         logger.info(
             "Agent starting",
-            name=self.settings.name,
+            agent_name=self.settings.name,
             version=self.settings.version,
             backend_url=self.settings.backend_url,
         )
@@ -140,6 +140,7 @@ class Agent:
             window_finder=window_finder,
             state_store=state_store,
             clock=clock,
+            logger=get_ilogger("test_executor"),
         )
 
         logger.info("Services initialized with DI")
@@ -168,7 +169,7 @@ class Agent:
 
         # 테스트 시작 명령
         self._ws_client.register_handler(
-            BackendMessageType.START_TEST,
+            BackendMessageType.RUN_TEST,
             self._handle_start_test,
         )
 

@@ -7,7 +7,7 @@ import asyncio
 from dataclasses import dataclass
 from typing import Optional, Callable, Awaitable, Any
 
-from ..core.protocols import (
+from core.protocols import (
     IWindowFinder,
     IWindowHandle,
     IStateStore,
