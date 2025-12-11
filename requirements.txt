@@ -1,0 +1,30 @@
+# Core
+pywinauto>=0.6.8
+pywin32>=306
+httpx>=0.25.0
+websockets>=12.0
+tenacity>=8.2.0
+
+# Configuration
+pydantic>=2.5.0
+pydantic-settings>=2.1.0
+python-dotenv>=1.0.0
+
+# Logging & Monitoring
+structlog>=23.2.0
+
+# Async
+asyncio-throttle>=1.0.2
+
+# Testing
+pytest>=7.4.0
+pytest-asyncio>=0.21.0
+pytest-cov>=4.1.0
+
+# Development
+ruff>=0.1.0
+mypy>=1.7.0
+
+# Build & Distribution
+pyinstaller>=6.0.0
+# nuitka>=2.0  # 향후 코드 보호 필요시 활성화
