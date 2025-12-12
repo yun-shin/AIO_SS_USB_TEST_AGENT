@@ -141,7 +141,9 @@ class OperationResult:
     data: Optional[dict] = None
 
     @classmethod
-    def ok(cls, message: Optional[str] = None, data: Optional[dict] = None) -> "OperationResult":
+    def ok(
+        cls, message: Optional[str] = None, data: Optional[dict] = None
+    ) -> "OperationResult":
         """Create success result.
 
         Args:

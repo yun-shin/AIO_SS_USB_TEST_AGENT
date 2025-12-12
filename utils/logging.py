@@ -14,10 +14,7 @@ from typing import Any, Dict, Optional
 from config.settings import get_log_settings
 
 # Context variable for agent context tracking
-agent_context_var: ContextVar[Dict[str, Any]] = ContextVar(
-    "agent_context",
-    default={}
-)
+agent_context_var: ContextVar[Dict[str, Any]] = ContextVar("agent_context", default={})
 
 
 class ContextFilter(logging.Filter):
@@ -48,11 +45,29 @@ class ContextFilter(logging.Filter):
         # Merge any custom attributes added via extra={...}
         # Exclude standard LogRecord attributes
         standard_attrs = {
-            "name", "msg", "args", "created", "filename", "funcName",
-            "levelname", "levelno", "lineno", "module", "msecs",
-            "message", "pathname", "process", "processName", "relativeCreated",
-            "thread", "threadName", "exc_info", "exc_text", "stack_info",
-            "extra_fields", "taskName"
+            "name",
+            "msg",
+            "args",
+            "created",
+            "filename",
+            "funcName",
+            "levelname",
+            "levelno",
+            "lineno",
+            "module",
+            "msecs",
+            "message",
+            "pathname",
+            "process",
+            "processName",
+            "relativeCreated",
+            "thread",
+            "threadName",
+            "exc_info",
+            "exc_text",
+            "stack_info",
+            "extra_fields",
+            "taskName",
         }
 
         for key, value in record.__dict__.items():
@@ -109,7 +124,7 @@ class TextFormatter(logging.Formatter):
         """Initialize text formatter."""
         super().__init__(
             fmt="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-            datefmt="%Y-%m-%d %H:%M:%S"
+            datefmt="%Y-%m-%d %H:%M:%S",
         )
 
     def format(self, record: logging.LogRecord) -> str:
@@ -138,9 +153,7 @@ class ContextLogger(logging.LoggerAdapter):
         logger.info("message", key1=value1, key2=value2)
     """
 
-    def process(
-        self, msg: str, kwargs: Dict[str, Any]
-    ) -> tuple[str, Dict[str, Any]]:
+    def process(self, msg: str, kwargs: Dict[str, Any]) -> tuple[str, Dict[str, Any]]:
         """Process log message and extract extra fields.
 
         Args:

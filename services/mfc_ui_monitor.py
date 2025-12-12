@@ -155,7 +155,9 @@ class MFCUIMonitor:
         # 콜백
         self._on_change: Callable[[UIStateChange], Awaitable[None]] | None = None
         self._on_poll: Callable[[MFCUIState], Awaitable[None]] | None = None
-        self._on_test_completed: Callable[[int, ProcessState], Awaitable[None]] | None = None
+        self._on_test_completed: (
+            Callable[[int, ProcessState], Awaitable[None]] | None
+        ) = None
         self._on_user_intervention: Callable[[int, str], Awaitable[None]] | None = None
 
     def set_change_callback(

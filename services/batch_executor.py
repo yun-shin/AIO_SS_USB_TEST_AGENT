@@ -178,7 +178,9 @@ class BatchExecutor:
             test_preset=config.test_preset.value,
             is_hot_test=config.test_preset.is_hot_test(),
             precondition_enabled=config.precondition.enabled,
-            precondition_capacity=config.precondition.capacity.value if config.precondition.capacity else None,
+            precondition_capacity=config.precondition.capacity.value
+            if config.precondition.capacity
+            else None,
             needs_precondition=config.needs_precondition(),
         )
 
@@ -187,7 +189,9 @@ class BatchExecutor:
             logger.info(
                 "Phase 1: Running precondition",
                 slot_idx=slot_idx,
-                capacity=config.precondition.capacity.value if config.precondition.capacity else "NOT SET",
+                capacity=config.precondition.capacity.value
+                if config.precondition.capacity
+                else "NOT SET",
                 method="0HR",
             )
 
@@ -195,7 +199,9 @@ class BatchExecutor:
             if not precond_success:
                 logger.error("Precondition failed", slot_idx=slot_idx)
                 if self._state_machine.can_transition(SlotEvent.FAIL):
-                    self._state_machine.trigger(SlotEvent.FAIL, error_message="Precondition failed")
+                    self._state_machine.trigger(
+                        SlotEvent.FAIL, error_message="Precondition failed"
+                    )
                 return False
 
             logger.info("Precondition completed", slot_idx=slot_idx)
@@ -261,7 +267,9 @@ class BatchExecutor:
             if not success:
                 logger.error(f"Batch {batch_num} failed to start", slot_idx=slot_idx)
                 if self._state_machine.can_transition(SlotEvent.FAIL):
-                    self._state_machine.trigger(SlotEvent.FAIL, error_message=f"Batch {batch_num} failed")
+                    self._state_machine.trigger(
+                        SlotEvent.FAIL, error_message=f"Batch {batch_num} failed"
+                    )
                 return False
 
             # Transition to RUNNING
@@ -276,18 +284,26 @@ class BatchExecutor:
                     return False
                 logger.error(f"Batch {batch_num} did not pass", slot_idx=slot_idx)
                 if self._state_machine.can_transition(SlotEvent.FAIL):
-                    self._state_machine.trigger(SlotEvent.FAIL, error_message=f"Batch {batch_num} failed")
+                    self._state_machine.trigger(
+                        SlotEvent.FAIL, error_message=f"Batch {batch_num} failed"
+                    )
                 return False
 
             # Batch complete
-            self._state_machine.trigger(SlotEvent.BATCH_COMPLETE, context_update={"current_loop": current_loop})
+            self._state_machine.trigger(
+                SlotEvent.BATCH_COMPLETE, context_update={"current_loop": current_loop}
+            )
 
             if batch_num < total_batch:
                 self._state_machine.trigger(SlotEvent.BATCH_NEXT)
 
         # All batches done
         self._state_machine.trigger(SlotEvent.ALL_BATCHES_DONE)
-        logger.info("All batches completed successfully", slot_idx=slot_idx, total_batch=total_batch)
+        logger.info(
+            "All batches completed successfully",
+            slot_idx=slot_idx,
+            total_batch=total_batch,
+        )
         return True
 
     async def _run_precondition(
@@ -307,7 +323,9 @@ class BatchExecutor:
             True if precondition passed.
         """
         if config.precondition.capacity is None:
-            logger.error("Precondition capacity not provided by Backend", slot_idx=slot_idx)
+            logger.error(
+                "Precondition capacity not provided by Backend", slot_idx=slot_idx
+            )
             return False
 
         # Create precondition config
@@ -401,8 +419,14 @@ class BatchExecutor:
                 if process_state == ProcessState.TEST:
                     test_started = True
                     test_started_time = asyncio.get_event_loop().time()
-                    logger.info("Test state entered, waiting for result", slot_idx=slot_idx)
-                elif process_state in (ProcessState.IDLE, ProcessState.FAIL, ProcessState.PASS):
+                    logger.info(
+                        "Test state entered, waiting for result", slot_idx=slot_idx
+                    )
+                elif process_state in (
+                    ProcessState.IDLE,
+                    ProcessState.FAIL,
+                    ProcessState.PASS,
+                ):
                     # 이전 상태가 남아있음 - 테스트 시작 대기
                     await asyncio.sleep(self._poll_interval)
                     continue
@@ -414,7 +438,9 @@ class BatchExecutor:
             # Check for Pass state
             if process_state == ProcessState.PASS:
                 # 테스트 시작 후 최소 시간이 지나지 않으면 무시 (잘못된 상태 읽기 방지)
-                elapsed = asyncio.get_event_loop().time() - (test_started_time or start_time)
+                elapsed = asyncio.get_event_loop().time() - (
+                    test_started_time or start_time
+                )
                 if elapsed < MIN_TEST_DURATION:
                     logger.warning(
                         "Pass detected too early, ignoring (likely false positive)",
@@ -425,7 +451,11 @@ class BatchExecutor:
                     await asyncio.sleep(self._poll_interval)
                     continue
 
-                logger.info("Pass state detected", slot_idx=slot_idx, elapsed_seconds=round(elapsed, 1))
+                logger.info(
+                    "Pass state detected",
+                    slot_idx=slot_idx,
+                    elapsed_seconds=round(elapsed, 1),
+                )
                 return True
 
             # Check for Fail state (only after test started)
@@ -448,9 +478,7 @@ class BatchExecutor:
         )
         return False
 
-    async def _read_process_state_from_ui(
-        self, slot_idx: int
-    ) -> "ProcessState | None":
+    async def _read_process_state_from_ui(self, slot_idx: int) -> "ProcessState | None":
         """Read current process state directly from MFC UI.
 
         Args:
@@ -549,9 +577,7 @@ class BatchExecutorManager:
         executor = self._get_or_create_executor(slot_idx)
 
         # Create and start task
-        task = asyncio.create_task(
-            executor.execute(slot_idx, config, on_progress)
-        )
+        task = asyncio.create_task(executor.execute(slot_idx, config, on_progress))
         self._tasks[slot_idx] = task
 
         logger.info("Batch test started", slot_idx=slot_idx)
@@ -587,10 +613,7 @@ class BatchExecutorManager:
         Returns:
             True if running.
         """
-        return (
-            slot_idx in self._tasks
-            and not self._tasks[slot_idx].done()
-        )
+        return slot_idx in self._tasks and not self._tasks[slot_idx].done()
 
     async def wait_for_completion(self, slot_idx: int) -> Optional[bool]:
         """Wait for batch test to complete.

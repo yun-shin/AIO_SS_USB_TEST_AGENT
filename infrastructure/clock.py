@@ -81,12 +81,14 @@ class FakeClock(IClock):
         """Fake sleep (returns immediately).
 
         Does not actually wait, only records the call.
+        Yields control to the event loop to prevent busy loops in tests.
 
         Args:
             seconds: Sleep duration in seconds.
         """
         self._sleep_calls.append(seconds)
-        # 실제로 대기하지 않음
+        # 실제로 대기하지 않지만, 이벤트 루프에 제어를 넘겨야 함
+        await asyncio.sleep(0)
 
     def monotonic(self) -> float:
         """Return monotonic timer value."""

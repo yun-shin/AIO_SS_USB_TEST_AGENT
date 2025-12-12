@@ -44,7 +44,19 @@ class TestMemoryMonitorConfig:
     """Tests for MemoryMonitorConfig."""
 
     def test_defaults(self):
-        """Test default configuration values."""
+        """[TC-MEMORY_MONITOR-001] Defaults - 테스트 시나리오를 검증한다.
+
+            테스트 목적:
+                Defaults 시나리오에서 기대 동작이 유지되는지 확인한다.
+
+            테스트 시나리오:
+                Given: 테스트 코드에서 준비한 기본 상태
+                When: test_defaults 케이스를 실행하면
+                Then: 단언문에 명시된 기대 결과가 충족된다.
+
+            Notes:
+                None
+            """
         config = MemoryMonitorConfig()
 
         assert config.check_interval_seconds == 60.0
@@ -54,7 +66,19 @@ class TestMemoryMonitorConfig:
         assert config.alert_on_critical is True
 
     def test_custom_values(self):
-        """Test custom configuration values."""
+        """[TC-MEMORY_MONITOR-002] Custom values - 테스트 시나리오를 검증한다.
+
+            테스트 목적:
+                Custom values 시나리오에서 기대 동작이 유지되는지 확인한다.
+
+            테스트 시나리오:
+                Given: 테스트 코드에서 준비한 기본 상태
+                When: test_custom_values 케이스를 실행하면
+                Then: 단언문에 명시된 기대 결과가 충족된다.
+
+            Notes:
+                None
+            """
         config = MemoryMonitorConfig(
             check_interval_seconds=30.0,
             auto_optimize=False,
@@ -103,13 +127,37 @@ class TestMemoryMonitor:
         )
 
     def test_init(self, memory_monitor):
-        """Test MemoryMonitor initialization."""
+        """[TC-MEMORY_MONITOR-003] Init - 테스트 시나리오를 검증한다.
+
+            테스트 목적:
+                Init 시나리오에서 기대 동작이 유지되는지 확인한다.
+
+            테스트 시나리오:
+                Given: 테스트 코드에서 준비한 기본 상태
+                When: test_init 케이스를 실행하면
+                Then: 단언문에 명시된 기대 결과가 충족된다.
+
+            Notes:
+                None
+            """
         assert memory_monitor.is_running is False
         assert memory_monitor._monitor_task is None
 
     @pytest.mark.asyncio
     async def test_start_stop(self, memory_monitor):
-        """Test starting and stopping the monitor."""
+        """[TC-MEMORY_MONITOR-004] Start stop - 테스트 시나리오를 검증한다.
+
+            테스트 목적:
+                Start stop 시나리오에서 기대 동작이 유지되는지 확인한다.
+
+            테스트 시나리오:
+                Given: 테스트 코드에서 준비한 기본 상태
+                When: test_start_stop 케이스를 실행하면
+                Then: 단언문에 명시된 기대 결과가 충족된다.
+
+            Notes:
+                None
+            """
         # Start
         await memory_monitor.start()
         assert memory_monitor.is_running is True
@@ -124,7 +172,19 @@ class TestMemoryMonitor:
 
     @pytest.mark.asyncio
     async def test_double_start_warning(self, memory_monitor, fake_logger):
-        """Test that double start logs warning."""
+        """[TC-MEMORY_MONITOR-005] Double start warning - 테스트 시나리오를 검증한다.
+
+            테스트 목적:
+                Double start warning 시나리오에서 기대 동작이 유지되는지 확인한다.
+
+            테스트 시나리오:
+                Given: 테스트 코드에서 준비한 기본 상태
+                When: test_double_start_warning 케이스를 실행하면
+                Then: 단언문에 명시된 기대 결과가 충족된다.
+
+            Notes:
+                None
+            """
         await memory_monitor.start()
         await memory_monitor.start()  # Second start
 
@@ -136,7 +196,19 @@ class TestMemoryMonitor:
 
     @pytest.mark.asyncio
     async def test_get_current_stats(self, memory_monitor, fake_memory_manager):
-        """Test getting current memory stats."""
+        """[TC-MEMORY_MONITOR-006] Get current stats - 테스트 시나리오를 검증한다.
+
+            테스트 목적:
+                Get current stats 시나리오에서 기대 동작이 유지되는지 확인한다.
+
+            테스트 시나리오:
+                Given: 테스트 코드에서 준비한 기본 상태
+                When: test_get_current_stats 케이스를 실행하면
+                Then: 단언문에 명시된 기대 결과가 충족된다.
+
+            Notes:
+                None
+            """
         fake_memory_manager.set_memory_mb(120.0)
 
         stats = memory_monitor.get_current_stats()
@@ -145,7 +217,19 @@ class TestMemoryMonitor:
 
     @pytest.mark.asyncio
     async def test_force_optimize(self, memory_monitor, fake_memory_manager):
-        """Test forced optimization."""
+        """[TC-MEMORY_MONITOR-007] Force optimize - 테스트 시나리오를 검증한다.
+
+            테스트 목적:
+                Force optimize 시나리오에서 기대 동작이 유지되는지 확인한다.
+
+            테스트 시나리오:
+                Given: 테스트 코드에서 준비한 기본 상태
+                When: test_force_optimize 케이스를 실행하면
+                Then: 단언문에 명시된 기대 결과가 충족된다.
+
+            Notes:
+                None
+            """
         fake_memory_manager.set_memory_mb(100.0)
 
         result = await memory_monitor.force_optimize()
@@ -156,8 +240,22 @@ class TestMemoryMonitor:
         assert len(memory_monitor._optimization_history) == 1
 
     @pytest.mark.asyncio
-    async def test_memory_alert_callback(self, fake_memory_manager, fake_clock, fake_logger):
-        """Test memory alert callback on threshold exceeded."""
+    async def test_memory_alert_callback(
+        self, fake_memory_manager, fake_clock, fake_logger
+    ):
+        """[TC-MEMORY_MONITOR-008] Memory alert callback - 테스트 시나리오를 검증한다.
+
+            테스트 목적:
+                Memory alert callback 시나리오에서 기대 동작이 유지되는지 확인한다.
+
+            테스트 시나리오:
+                Given: 테스트 코드에서 준비한 기본 상태
+                When: test_memory_alert_callback 케이스를 실행하면
+                Then: 단언문에 명시된 기대 결과가 충족된다.
+
+            Notes:
+                None
+            """
         alert_callback = AsyncMock()
 
         monitor = MemoryMonitor(
@@ -188,7 +286,19 @@ class TestMemoryMonitor:
 
     @pytest.mark.asyncio
     async def test_critical_alert(self, fake_memory_manager, fake_clock, fake_logger):
-        """Test critical memory alert."""
+        """[TC-MEMORY_MONITOR-009] Critical alert - 테스트 시나리오를 검증한다.
+
+            테스트 목적:
+                Critical alert 시나리오에서 기대 동작이 유지되는지 확인한다.
+
+            테스트 시나리오:
+                Given: 테스트 코드에서 준비한 기본 상태
+                When: test_critical_alert 케이스를 실행하면
+                Then: 단언문에 명시된 기대 결과가 충족된다.
+
+            Notes:
+                None
+            """
         alert_callback = AsyncMock()
 
         monitor = MemoryMonitor(
@@ -217,7 +327,19 @@ class TestMemoryMonitor:
 
     @pytest.mark.asyncio
     async def test_stats_history_limit(self, memory_monitor, fake_memory_manager):
-        """Test that stats history respects size limit."""
+        """[TC-MEMORY_MONITOR-010] Stats history limit - 테스트 시나리오를 검증한다.
+
+            테스트 목적:
+                Stats history limit 시나리오에서 기대 동작이 유지되는지 확인한다.
+
+            테스트 시나리오:
+                Given: 테스트 코드에서 준비한 기본 상태
+                When: test_stats_history_limit 케이스를 실행하면
+                Then: 단언문에 명시된 기대 결과가 충족된다.
+
+            Notes:
+                None
+            """
         memory_monitor._max_history_size = 5
 
         # Add more than max history size
@@ -229,7 +351,19 @@ class TestMemoryMonitor:
 
     @pytest.mark.asyncio
     async def test_optimization_callback(self, memory_monitor, fake_memory_manager):
-        """Test optimization complete callback."""
+        """[TC-MEMORY_MONITOR-011] Optimization callback - 테스트 시나리오를 검증한다.
+
+            테스트 목적:
+                Optimization callback 시나리오에서 기대 동작이 유지되는지 확인한다.
+
+            테스트 시나리오:
+                Given: 테스트 코드에서 준비한 기본 상태
+                When: test_optimization_callback 케이스를 실행하면
+                Then: 단언문에 명시된 기대 결과가 충족된다.
+
+            Notes:
+                None
+            """
         opt_callback = AsyncMock()
         memory_monitor.on_optimization_complete = opt_callback
 
@@ -242,7 +376,19 @@ class TestMemoryMonitor:
         opt_callback.assert_called_once()
 
     def test_get_statistics_summary(self, memory_monitor, fake_memory_manager):
-        """Test getting statistics summary."""
+        """[TC-MEMORY_MONITOR-012] Get statistics summary - 테스트 시나리오를 검증한다.
+
+            테스트 목적:
+                Get statistics summary 시나리오에서 기대 동작이 유지되는지 확인한다.
+
+            테스트 시나리오:
+                Given: 테스트 코드에서 준비한 기본 상태
+                When: test_get_statistics_summary 케이스를 실행하면
+                Then: 단언문에 명시된 기대 결과가 충족된다.
+
+            Notes:
+                None
+            """
         summary = memory_monitor.get_statistics_summary()
 
         assert "current" in summary
@@ -252,7 +398,19 @@ class TestMemoryMonitor:
         assert "config" in summary
 
     def test_register_cleanup(self, memory_monitor):
-        """Test registering cleanup callbacks."""
+        """[TC-MEMORY_MONITOR-013] Register cleanup - 테스트 시나리오를 검증한다.
+
+            테스트 목적:
+                Register cleanup 시나리오에서 기대 동작이 유지되는지 확인한다.
+
+            테스트 시나리오:
+                Given: 테스트 코드에서 준비한 기본 상태
+                When: test_register_cleanup 케이스를 실행하면
+                Then: 단언문에 명시된 기대 결과가 충족된다.
+
+            Notes:
+                None
+            """
         callback = MagicMock()
         memory_monitor.register_cleanup(callback, "test_cleanup")
 
@@ -260,7 +418,19 @@ class TestMemoryMonitor:
         assert "test_cleanup" in memory_monitor._memory_manager._cleanup_callbacks
 
     def test_clear_history(self, memory_monitor, fake_logger):
-        """Test clearing history."""
+        """[TC-MEMORY_MONITOR-014] Clear history - 테스트 시나리오를 검증한다.
+
+            테스트 목적:
+                Clear history 시나리오에서 기대 동작이 유지되는지 확인한다.
+
+            테스트 시나리오:
+                Given: 테스트 코드에서 준비한 기본 상태
+                When: test_clear_history 케이스를 실행하면
+                Then: 단언문에 명시된 기대 결과가 충족된다.
+
+            Notes:
+                None
+            """
         # Add some history
         memory_monitor._stats_history.append(
             MemoryStats(
@@ -293,7 +463,19 @@ class TestMemoryMonitor:
     async def test_monitor_loop_error_handling(
         self, fake_memory_manager, fake_clock, fake_logger
     ):
-        """Test that monitor loop handles errors gracefully."""
+        """[TC-MEMORY_MONITOR-015] Monitor loop error handling - 테스트 시나리오를 검증한다.
+
+            테스트 목적:
+                Monitor loop error handling 시나리오에서 기대 동작이 유지되는지 확인한다.
+
+            테스트 시나리오:
+                Given: 테스트 코드에서 준비한 기본 상태
+                When: test_monitor_loop_error_handling 케이스를 실행하면
+                Then: 단언문에 명시된 기대 결과가 충족된다.
+
+            Notes:
+                None
+            """
         # Create a memory manager that raises an error
         class ErrorMemoryManager(FakeMemoryManager):
             def __init__(self):

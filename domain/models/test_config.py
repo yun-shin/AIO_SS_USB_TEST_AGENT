@@ -226,7 +226,9 @@ class TestConfig:
     def from_dict(cls, data: dict) -> "TestConfig":
         """Create TestConfig from dictionary.
 
-        JSON structure from Backend (new structure only, no legacy):
+        Supports two JSON formats:
+
+        1. Backend format (nested 'test' field):
         {
             "slot_idx": 0,
             "drive": "H",
@@ -234,26 +236,33 @@ class TestConfig:
             "test_file": "Photo",
             "precondition": {
                 "enabled": true,
-                "capacity": "64GB",  // Backend calculated
+                "capacity": "64GB",
                 "method": "0HR",
                 "loop_count": 1
             },
             "test": {
-                "capacity": "4GB",   // Main test capacity
+                "capacity": "4GB",
                 "method": "0HR",
                 "loop_count": 10,
                 "loop_step": 1
             }
         }
 
+        2. Flat format (from to_dict()):
+        {
+            "slot_idx": 0,
+            "drive": "H",
+            "capacity": "32GB",
+            "method": "0HR",
+            "loop_count": 10,
+            ...
+        }
+
         Args:
-            data: Settings dictionary from Backend.
+            data: Settings dictionary (Backend or serialized format).
 
         Returns:
             TestConfig instance.
-
-        Raises:
-            KeyError: If required 'test' field is missing.
         """
         # Parse precondition config (Backend에서 capacity를 계산해서 보내줌)
         precondition_data = data.get("precondition", {})
@@ -268,15 +277,21 @@ class TestConfig:
             loop_count=precondition_data.get("loop_count", 1),
         )
 
-        # Parse main test config (required, no legacy support)
+        # Parse main test config
+        # Support both nested 'test' field (Backend) and flat format (to_dict)
         test_data = data.get("test")
-        if not test_data:
-            raise KeyError("Missing required 'test' field in config from Backend")
-
-        test_capacity = TestCapacity(test_data.get("capacity", "4GB"))
-        test_method = TestMethod(test_data.get("method", "0HR"))
-        test_loop_count = test_data.get("loop_count", 10)
-        test_loop_step = test_data.get("loop_step", 1)
+        if test_data:
+            # Backend format with nested 'test' field
+            test_capacity = TestCapacity(test_data.get("capacity", "4GB"))
+            test_method = TestMethod(test_data.get("method", "0HR"))
+            test_loop_count = test_data.get("loop_count", 10)
+            test_loop_step = test_data.get("loop_step", 1)
+        else:
+            # Flat format (from to_dict or direct fields)
+            test_capacity = TestCapacity(data.get("capacity", "32GB"))
+            test_method = TestMethod(data.get("method", "0HR"))
+            test_loop_count = data.get("loop_count", 10)
+            test_loop_step = data.get("loop_step", 1)
 
         return cls(
             slot_idx=data["slot_idx"],

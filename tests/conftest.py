@@ -139,12 +139,12 @@ def fake_clock() -> FakeClock:
 
     Allows time control in tests.
 
-    Example:
-        ```python
-        def test_timeout(fake_clock):
-            fake_clock.advance(seconds=60)
-            assert fake_clock.monotonic() == 60
-        ```
+        Example:
+            ```python
+            def test_timeout(fake_clock):
+                fake_clock.advance(seconds=60)
+                assert fake_clock.monotonic() == 60
+            ```
     """
     return FakeClock(
         initial_time=datetime(2025, 1, 1, 12, 0, 0),
@@ -196,7 +196,19 @@ def test_executor(
     fake_logger: FakeLogger,
     fake_window: FakeWindowHandle,
 ) -> TestExecutor:
-    """TestExecutor fixture with mocked dependencies."""
+    """[TC-CONFTEST-001] Executor - 테스트 시나리오를 검증한다.
+
+        테스트 목적:
+            Executor 시나리오에서 기대 동작이 유지되는지 확인한다.
+
+        테스트 시나리오:
+            Given: 테스트 코드에서 준비한 기본 상태
+            When: test_executor 케이스를 실행하면
+            Then: 단언문에 명시된 기대 결과가 충족된다.
+
+        Notes:
+            None
+        """
     fake_window_finder.add_window(".*USB Test.*", fake_window)
 
     return TestExecutor(
@@ -236,7 +248,19 @@ def test_container(
     fake_clock: FakeClock,
     fake_logger: FakeLogger,
 ) -> Generator[Container, None, None]:
-    """DI container fixture for testing."""
+    """[TC-CONFTEST-002] Container - 테스트 시나리오를 검증한다.
+
+        테스트 목적:
+            Container 시나리오에서 기대 동작이 유지되는지 확인한다.
+
+        테스트 시나리오:
+            Given: 테스트 코드에서 준비한 기본 상태
+            When: test_container 케이스를 실행하면
+            Then: 단언문에 명시된 기대 결과가 충족된다.
+
+        Notes:
+            None
+        """
     container = Container()
 
     container.register_instance(IWindowFinder, fake_window_finder)

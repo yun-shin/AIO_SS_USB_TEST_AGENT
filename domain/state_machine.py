@@ -248,30 +248,25 @@ class SlotStateMachine:
         Transition(SlotState.IDLE, SlotEvent.CONNECT, SlotState.CONNECTING),
         Transition(SlotState.IDLE, SlotEvent.START_TEST, SlotState.PREPARING),
         Transition(SlotState.IDLE, SlotEvent.RESET, SlotState.IDLE),
-
         # Connecting transitions
         Transition(SlotState.CONNECTING, SlotEvent.CONNECTED, SlotState.READY),
         Transition(SlotState.CONNECTING, SlotEvent.CONNECTION_FAILED, SlotState.ERROR),
         Transition(SlotState.CONNECTING, SlotEvent.DISCONNECTED, SlotState.IDLE),
-
         # Ready transitions
         Transition(SlotState.READY, SlotEvent.START_TEST, SlotState.PREPARING),
         Transition(SlotState.READY, SlotEvent.DISCONNECTED, SlotState.IDLE),
         Transition(SlotState.READY, SlotEvent.RESET, SlotState.IDLE),
-
         # Preparing transitions
         Transition(SlotState.PREPARING, SlotEvent.CONFIGURE, SlotState.CONFIGURING),
         Transition(SlotState.PREPARING, SlotEvent.FAIL, SlotState.FAILED),
         Transition(SlotState.PREPARING, SlotEvent.ERROR, SlotState.ERROR),
         Transition(SlotState.PREPARING, SlotEvent.STOP, SlotState.STOPPING),
-
         # Configuring transitions
         Transition(SlotState.CONFIGURING, SlotEvent.CONFIGURED, SlotState.READY),
         Transition(SlotState.CONFIGURING, SlotEvent.RUN, SlotState.RUNNING),
         Transition(SlotState.CONFIGURING, SlotEvent.FAIL, SlotState.FAILED),
         Transition(SlotState.CONFIGURING, SlotEvent.ERROR, SlotState.ERROR),
         Transition(SlotState.CONFIGURING, SlotEvent.STOP, SlotState.STOPPING),
-
         # Running transitions
         Transition(SlotState.RUNNING, SlotEvent.PAUSE, SlotState.PAUSED),
         Transition(SlotState.RUNNING, SlotEvent.STOP, SlotState.STOPPING),
@@ -281,32 +276,26 @@ class SlotStateMachine:
         Transition(SlotState.RUNNING, SlotEvent.DISCONNECTED, SlotState.ERROR),
         # Batch: 1회 batch 완료 → WAITING 상태로 전이
         Transition(SlotState.RUNNING, SlotEvent.BATCH_COMPLETE, SlotState.WAITING),
-
         # Waiting transitions (batch 대기 상태)
         Transition(SlotState.WAITING, SlotEvent.BATCH_NEXT, SlotState.CONFIGURING),
         Transition(SlotState.WAITING, SlotEvent.ALL_BATCHES_DONE, SlotState.COMPLETED),
         Transition(SlotState.WAITING, SlotEvent.STOP, SlotState.STOPPING),
         Transition(SlotState.WAITING, SlotEvent.ERROR, SlotState.ERROR),
         Transition(SlotState.WAITING, SlotEvent.FAIL, SlotState.FAILED),
-
         # Paused transitions
         Transition(SlotState.PAUSED, SlotEvent.RESUME, SlotState.RUNNING),
         Transition(SlotState.PAUSED, SlotEvent.STOP, SlotState.STOPPING),
         Transition(SlotState.PAUSED, SlotEvent.ERROR, SlotState.ERROR),
-
         # Stopping transitions
         Transition(SlotState.STOPPING, SlotEvent.STOPPED, SlotState.IDLE),
         Transition(SlotState.STOPPING, SlotEvent.ERROR, SlotState.ERROR),
-
         # Completed transitions
         Transition(SlotState.COMPLETED, SlotEvent.RESET, SlotState.IDLE),
         Transition(SlotState.COMPLETED, SlotEvent.START_TEST, SlotState.PREPARING),
-
         # Failed transitions
         Transition(SlotState.FAILED, SlotEvent.RESET, SlotState.IDLE),
         Transition(SlotState.FAILED, SlotEvent.RETRY, SlotState.PREPARING),
         Transition(SlotState.FAILED, SlotEvent.START_TEST, SlotState.PREPARING),
-
         # Error transitions
         Transition(SlotState.ERROR, SlotEvent.RESET, SlotState.IDLE),
         Transition(SlotState.ERROR, SlotEvent.RETRY, SlotState.IDLE),
@@ -482,9 +471,7 @@ class SlotStateMachine:
             reason=reason,
         )
 
-        self._history.append(
-            (datetime.now(), old_state, SlotEvent.RESET, state)
-        )
+        self._history.append((datetime.now(), old_state, SlotEvent.RESET, state))
 
     def is_idle(self) -> bool:
         """Check if slot is idle."""

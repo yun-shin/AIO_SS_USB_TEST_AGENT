@@ -19,6 +19,7 @@ else:
 
 # 환경 변수 파일 경로 설정
 import os
+
 env_file = BASE_DIR / ".env"
 if env_file.exists():
     os.environ.setdefault("DOTENV_PATH", str(env_file))
@@ -49,6 +50,7 @@ def main() -> int:
     except Exception as e:
         print(f"Fatal error: {e}", file=sys.stderr)
         import traceback
+
         traceback.print_exc()
         return 1
 

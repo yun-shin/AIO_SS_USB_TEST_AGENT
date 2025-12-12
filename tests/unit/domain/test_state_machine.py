@@ -18,7 +18,19 @@ class TestSlotContext:
     """Tests for SlotContext."""
 
     def test_init_default_values(self):
-        """Test default initialization."""
+        """[TC-STATE_MACHINE-001] Init default values - 테스트 시나리오를 검증한다.
+
+            테스트 목적:
+                Init default values 시나리오에서 기대 동작이 유지되는지 확인한다.
+
+            테스트 시나리오:
+                Given: 테스트 코드에서 준비한 기본 상태
+                When: test_init_default_values 케이스를 실행하면
+                Then: 단언문에 명시된 기대 결과가 충족된다.
+
+            Notes:
+                None
+            """
         ctx = SlotContext(slot_idx=0)
 
         assert ctx.slot_idx == 0
@@ -31,7 +43,19 @@ class TestSlotContext:
         assert ctx.error_message is None
 
     def test_update_creates_new_instance(self):
-        """Test update creates new instance."""
+        """[TC-STATE_MACHINE-002] Update creates new instance - 테스트 시나리오를 검증한다.
+
+            테스트 목적:
+                Update creates new instance 시나리오에서 기대 동작이 유지되는지 확인한다.
+
+            테스트 시나리오:
+                Given: 테스트 코드에서 준비한 기본 상태
+                When: test_update_creates_new_instance 케이스를 실행하면
+                Then: 단언문에 명시된 기대 결과가 충족된다.
+
+            Notes:
+                None
+            """
         ctx1 = SlotContext(slot_idx=0)
         ctx2 = ctx1.update(test_id="test-123", current_loop=5)
 
@@ -42,7 +66,19 @@ class TestSlotContext:
         assert ctx1 is not ctx2
 
     def test_reset_clears_values(self):
-        """Test reset clears all values."""
+        """[TC-STATE_MACHINE-003] Reset clears values - 테스트 시나리오를 검증한다.
+
+            테스트 목적:
+                Reset clears values 시나리오에서 기대 동작이 유지되는지 확인한다.
+
+            테스트 시나리오:
+                Given: 테스트 코드에서 준비한 기본 상태
+                When: test_reset_clears_values 케이스를 실행하면
+                Then: 단언문에 명시된 기대 결과가 충족된다.
+
+            Notes:
+                None
+            """
         ctx = SlotContext(
             slot_idx=0,
             test_id="test-123",
@@ -57,7 +93,19 @@ class TestSlotContext:
         assert reset_ctx.error_message is None
 
     def test_progress_percent(self):
-        """Test progress percentage calculation."""
+        """[TC-STATE_MACHINE-004] Progress percent - 테스트 시나리오를 검증한다.
+
+            테스트 목적:
+                Progress percent 시나리오에서 기대 동작이 유지되는지 확인한다.
+
+            테스트 시나리오:
+                Given: 테스트 코드에서 준비한 기본 상태
+                When: test_progress_percent 케이스를 실행하면
+                Then: 단언문에 명시된 기대 결과가 충족된다.
+
+            Notes:
+                None
+            """
         ctx = SlotContext(slot_idx=0, current_loop=5, total_loop=10)
         assert ctx.get_progress_percent() == 50.0
 
@@ -65,7 +113,19 @@ class TestSlotContext:
         assert ctx_zero.get_progress_percent() == 0.0
 
     def test_to_dict(self):
-        """Test to_dict conversion."""
+        """[TC-STATE_MACHINE-005] To dict - 테스트 시나리오를 검증한다.
+
+            테스트 목적:
+                To dict 시나리오에서 기대 동작이 유지되는지 확인한다.
+
+            테스트 시나리오:
+                Given: 테스트 코드에서 준비한 기본 상태
+                When: test_to_dict 케이스를 실행하면
+                Then: 단언문에 명시된 기대 결과가 충족된다.
+
+            Notes:
+                None
+            """
         ctx = SlotContext(
             slot_idx=0,
             test_id="test-123",
@@ -85,17 +145,53 @@ class TestSlotStateMachine:
     """Tests for SlotStateMachine."""
 
     def test_initial_state_is_idle(self):
-        """Test initial state is IDLE."""
+        """[TC-STATE_MACHINE-006] Initial state is idle - 테스트 시나리오를 검증한다.
+
+            테스트 목적:
+                Initial state is idle 시나리오에서 기대 동작이 유지되는지 확인한다.
+
+            테스트 시나리오:
+                Given: 테스트 코드에서 준비한 기본 상태
+                When: test_initial_state_is_idle 케이스를 실행하면
+                Then: 단언문에 명시된 기대 결과가 충족된다.
+
+            Notes:
+                None
+            """
         machine = SlotStateMachine(slot_idx=0)
         assert machine.state == SlotState.IDLE
 
     def test_custom_initial_state(self):
-        """Test custom initial state."""
+        """[TC-STATE_MACHINE-007] Custom initial state - 테스트 시나리오를 검증한다.
+
+            테스트 목적:
+                Custom initial state 시나리오에서 기대 동작이 유지되는지 확인한다.
+
+            테스트 시나리오:
+                Given: 테스트 코드에서 준비한 기본 상태
+                When: test_custom_initial_state 케이스를 실행하면
+                Then: 단언문에 명시된 기대 결과가 충족된다.
+
+            Notes:
+                None
+            """
         machine = SlotStateMachine(slot_idx=0, initial_state=SlotState.READY)
         assert machine.state == SlotState.READY
 
     def test_valid_transition_idle_to_preparing(self):
-        """Test valid transition from IDLE to PREPARING."""
+        """[TC-STATE_MACHINE-008] Valid transition idle to preparing - 테스트 시나리오를 검증한다.
+
+            테스트 목적:
+                Valid transition idle to preparing 시나리오에서 기대 동작이 유지되는지 확인한다.
+
+            테스트 시나리오:
+                Given: 테스트 코드에서 준비한 기본 상태
+                When: test_valid_transition_idle_to_preparing 케이스를 실행하면
+                Then: 단언문에 명시된 기대 결과가 충족된다.
+
+            Notes:
+                None
+            """
         machine = SlotStateMachine(slot_idx=0)
 
         new_state = machine.trigger(SlotEvent.START_TEST)
@@ -104,7 +200,19 @@ class TestSlotStateMachine:
         assert machine.state == SlotState.PREPARING
 
     def test_valid_transition_sequence(self):
-        """Test valid transition sequence: IDLE -> PREPARING -> CONFIGURING -> RUNNING."""
+        """[TC-STATE_MACHINE-009] Valid transition sequence - 테스트 시나리오를 검증한다.
+
+            테스트 목적:
+                Valid transition sequence 시나리오에서 기대 동작이 유지되는지 확인한다.
+
+            테스트 시나리오:
+                Given: 테스트 코드에서 준비한 기본 상태
+                When: test_valid_transition_sequence 케이스를 실행하면
+                Then: 단언문에 명시된 기대 결과가 충족된다.
+
+            Notes:
+                None
+            """
         machine = SlotStateMachine(slot_idx=0)
 
         machine.trigger(SlotEvent.START_TEST)
@@ -117,7 +225,19 @@ class TestSlotStateMachine:
         assert machine.state == SlotState.RUNNING
 
     def test_invalid_transition_raises_error(self):
-        """Test invalid transition raises InvalidTransitionError."""
+        """[TC-STATE_MACHINE-010] Invalid transition raises error - 테스트 시나리오를 검증한다.
+
+            테스트 목적:
+                Invalid transition raises error 시나리오에서 기대 동작이 유지되는지 확인한다.
+
+            테스트 시나리오:
+                Given: 테스트 코드에서 준비한 기본 상태
+                When: test_invalid_transition_raises_error 케이스를 실행하면
+                Then: 단언문에 명시된 기대 결과가 충족된다.
+
+            Notes:
+                None
+            """
         machine = SlotStateMachine(slot_idx=0)
 
         with pytest.raises(InvalidTransitionError) as exc_info:
@@ -128,7 +248,19 @@ class TestSlotStateMachine:
         assert exc_info.value.slot_idx == 0
 
     def test_can_transition(self):
-        """Test can_transition method."""
+        """[TC-STATE_MACHINE-011] Can transition - 테스트 시나리오를 검증한다.
+
+            테스트 목적:
+                Can transition 시나리오에서 기대 동작이 유지되는지 확인한다.
+
+            테스트 시나리오:
+                Given: 테스트 코드에서 준비한 기본 상태
+                When: test_can_transition 케이스를 실행하면
+                Then: 단언문에 명시된 기대 결과가 충족된다.
+
+            Notes:
+                None
+            """
         machine = SlotStateMachine(slot_idx=0)
 
         assert machine.can_transition(SlotEvent.START_TEST) is True
@@ -137,7 +269,19 @@ class TestSlotStateMachine:
         assert machine.can_transition(SlotEvent.COMPLETE) is False
 
     def test_get_valid_events(self):
-        """Test get_valid_events method."""
+        """[TC-STATE_MACHINE-012] Get valid events - 테스트 시나리오를 검증한다.
+
+            테스트 목적:
+                Get valid events 시나리오에서 기대 동작이 유지되는지 확인한다.
+
+            테스트 시나리오:
+                Given: 테스트 코드에서 준비한 기본 상태
+                When: test_get_valid_events 케이스를 실행하면
+                Then: 단언문에 명시된 기대 결과가 충족된다.
+
+            Notes:
+                None
+            """
         machine = SlotStateMachine(slot_idx=0)
 
         valid_events = machine.get_valid_events()
@@ -148,7 +292,19 @@ class TestSlotStateMachine:
         assert SlotEvent.RUN not in valid_events
 
     def test_context_update_on_transition(self):
-        """Test context is updated on transition."""
+        """[TC-STATE_MACHINE-013] Context update on transition - 테스트 시나리오를 검증한다.
+
+            테스트 목적:
+                Context update on transition 시나리오에서 기대 동작이 유지되는지 확인한다.
+
+            테스트 시나리오:
+                Given: 테스트 코드에서 준비한 기본 상태
+                When: test_context_update_on_transition 케이스를 실행하면
+                Then: 단언문에 명시된 기대 결과가 충족된다.
+
+            Notes:
+                None
+            """
         machine = SlotStateMachine(slot_idx=0)
 
         machine.trigger(
@@ -160,7 +316,19 @@ class TestSlotStateMachine:
         assert machine.context.started_at is not None
 
     def test_error_message_on_error_transition(self):
-        """Test error message is set on error transition."""
+        """[TC-STATE_MACHINE-014] Error message on error transition - 테스트 시나리오를 검증한다.
+
+            테스트 목적:
+                Error message on error transition 시나리오에서 기대 동작이 유지되는지 확인한다.
+
+            테스트 시나리오:
+                Given: 테스트 코드에서 준비한 기본 상태
+                When: test_error_message_on_error_transition 케이스를 실행하면
+                Then: 단언문에 명시된 기대 결과가 충족된다.
+
+            Notes:
+                None
+            """
         machine = SlotStateMachine(slot_idx=0)
         machine.trigger(SlotEvent.START_TEST)
 
@@ -174,7 +342,19 @@ class TestSlotStateMachine:
         assert machine.context.error_count == 1
 
     def test_reset_clears_context(self):
-        """Test RESET clears context."""
+        """[TC-STATE_MACHINE-015] Reset clears context - 테스트 시나리오를 검증한다.
+
+            테스트 목적:
+                Reset clears context 시나리오에서 기대 동작이 유지되는지 확인한다.
+
+            테스트 시나리오:
+                Given: 테스트 코드에서 준비한 기본 상태
+                When: test_reset_clears_context 케이스를 실행하면
+                Then: 단언문에 명시된 기대 결과가 충족된다.
+
+            Notes:
+                None
+            """
         machine = SlotStateMachine(slot_idx=0)
         machine.trigger(
             SlotEvent.START_TEST,
@@ -188,7 +368,19 @@ class TestSlotStateMachine:
         assert machine.context.error_message is None
 
     def test_history_is_recorded(self):
-        """Test transition history is recorded."""
+        """[TC-STATE_MACHINE-016] History is recorded - 테스트 시나리오를 검증한다.
+
+            테스트 목적:
+                History is recorded 시나리오에서 기대 동작이 유지되는지 확인한다.
+
+            테스트 시나리오:
+                Given: 테스트 코드에서 준비한 기본 상태
+                When: test_history_is_recorded 케이스를 실행하면
+                Then: 단언문에 명시된 기대 결과가 충족된다.
+
+            Notes:
+                None
+            """
         machine = SlotStateMachine(slot_idx=0)
 
         machine.trigger(SlotEvent.START_TEST)
@@ -209,7 +401,19 @@ class TestSlotStateMachine:
         assert new_state2 == SlotState.CONFIGURING
 
     def test_state_change_callback(self):
-        """Test state change callback is invoked."""
+        """[TC-STATE_MACHINE-017] State change callback - 테스트 시나리오를 검증한다.
+
+            테스트 목적:
+                State change callback 시나리오에서 기대 동작이 유지되는지 확인한다.
+
+            테스트 시나리오:
+                Given: 테스트 코드에서 준비한 기본 상태
+                When: test_state_change_callback 케이스를 실행하면
+                Then: 단언문에 명시된 기대 결과가 충족된다.
+
+            Notes:
+                None
+            """
         callback_calls = []
 
         def callback(slot_idx, old_state, new_state):
@@ -222,7 +426,19 @@ class TestSlotStateMachine:
         assert callback_calls[0] == (0, SlotState.IDLE, SlotState.PREPARING)
 
     def test_is_idle(self):
-        """Test is_idle method."""
+        """[TC-STATE_MACHINE-018] Is idle - 테스트 시나리오를 검증한다.
+
+            테스트 목적:
+                Is idle 시나리오에서 기대 동작이 유지되는지 확인한다.
+
+            테스트 시나리오:
+                Given: 테스트 코드에서 준비한 기본 상태
+                When: test_is_idle 케이스를 실행하면
+                Then: 단언문에 명시된 기대 결과가 충족된다.
+
+            Notes:
+                None
+            """
         machine = SlotStateMachine(slot_idx=0)
         assert machine.is_idle() is True
 
@@ -230,7 +446,19 @@ class TestSlotStateMachine:
         assert machine.is_idle() is False
 
     def test_is_busy(self):
-        """Test is_busy method."""
+        """[TC-STATE_MACHINE-019] Is busy - 테스트 시나리오를 검증한다.
+
+            테스트 목적:
+                Is busy 시나리오에서 기대 동작이 유지되는지 확인한다.
+
+            테스트 시나리오:
+                Given: 테스트 코드에서 준비한 기본 상태
+                When: test_is_busy 케이스를 실행하면
+                Then: 단언문에 명시된 기대 결과가 충족된다.
+
+            Notes:
+                None
+            """
         machine = SlotStateMachine(slot_idx=0)
         assert machine.is_busy() is False
 
@@ -241,7 +469,19 @@ class TestSlotStateMachine:
         assert machine.is_busy() is False
 
     def test_is_running(self):
-        """Test is_running method."""
+        """[TC-STATE_MACHINE-020] Is running - 테스트 시나리오를 검증한다.
+
+            테스트 목적:
+                Is running 시나리오에서 기대 동작이 유지되는지 확인한다.
+
+            테스트 시나리오:
+                Given: 테스트 코드에서 준비한 기본 상태
+                When: test_is_running 케이스를 실행하면
+                Then: 단언문에 명시된 기대 결과가 충족된다.
+
+            Notes:
+                None
+            """
         machine = SlotStateMachine(slot_idx=0)
         assert machine.is_running() is False
 
@@ -251,7 +491,19 @@ class TestSlotStateMachine:
         assert machine.is_running() is True
 
     def test_is_terminal(self):
-        """Test is_terminal method."""
+        """[TC-STATE_MACHINE-021] Is terminal - 테스트 시나리오를 검증한다.
+
+            테스트 목적:
+                Is terminal 시나리오에서 기대 동작이 유지되는지 확인한다.
+
+            테스트 시나리오:
+                Given: 테스트 코드에서 준비한 기본 상태
+                When: test_is_terminal 케이스를 실행하면
+                Then: 단언문에 명시된 기대 결과가 충족된다.
+
+            Notes:
+                None
+            """
         machine = SlotStateMachine(slot_idx=0)
         assert machine.is_terminal() is False
 
@@ -262,7 +514,19 @@ class TestSlotStateMachine:
         assert machine.is_terminal() is True
 
     def test_force_state(self):
-        """Test force_state method."""
+        """[TC-STATE_MACHINE-022] Force state - 테스트 시나리오를 검증한다.
+
+            테스트 목적:
+                Force state 시나리오에서 기대 동작이 유지되는지 확인한다.
+
+            테스트 시나리오:
+                Given: 테스트 코드에서 준비한 기본 상태
+                When: test_force_state 케이스를 실행하면
+                Then: 단언문에 명시된 기대 결과가 충족된다.
+
+            Notes:
+                None
+            """
         machine = SlotStateMachine(slot_idx=0)
         machine.trigger(SlotEvent.START_TEST)
 
@@ -271,7 +535,19 @@ class TestSlotStateMachine:
         assert machine.state == SlotState.IDLE
 
     def test_to_dict(self):
-        """Test to_dict method."""
+        """[TC-STATE_MACHINE-023] To dict - 테스트 시나리오를 검증한다.
+
+            테스트 목적:
+                To dict 시나리오에서 기대 동작이 유지되는지 확인한다.
+
+            테스트 시나리오:
+                Given: 테스트 코드에서 준비한 기본 상태
+                When: test_to_dict 케이스를 실행하면
+                Then: 단언문에 명시된 기대 결과가 충족된다.
+
+            Notes:
+                None
+            """
         machine = SlotStateMachine(slot_idx=0)
         machine.trigger(SlotEvent.START_TEST)
 
@@ -288,7 +564,19 @@ class TestSlotStateMachineManager:
     """Tests for SlotStateMachineManager."""
 
     def test_init_creates_machines_for_all_slots(self):
-        """Test initialization creates machines for all slots."""
+        """[TC-STATE_MACHINE-024] Init creates machines for all slots - 테스트 시나리오를 검증한다.
+
+            테스트 목적:
+                Init creates machines for all slots 시나리오에서 기대 동작이 유지되는지 확인한다.
+
+            테스트 시나리오:
+                Given: 테스트 코드에서 준비한 기본 상태
+                When: test_init_creates_machines_for_all_slots 케이스를 실행하면
+                Then: 단언문에 명시된 기대 결과가 충족된다.
+
+            Notes:
+                None
+            """
         manager = SlotStateMachineManager(max_slots=8)
 
         assert manager.max_slots == 8
@@ -297,21 +585,57 @@ class TestSlotStateMachineManager:
             assert manager.get(i).slot_idx == i
 
     def test_getitem(self):
-        """Test __getitem__ access."""
+        """[TC-STATE_MACHINE-025] Getitem - 테스트 시나리오를 검증한다.
+
+            테스트 목적:
+                Getitem 시나리오에서 기대 동작이 유지되는지 확인한다.
+
+            테스트 시나리오:
+                Given: 테스트 코드에서 준비한 기본 상태
+                When: test_getitem 케이스를 실행하면
+                Then: 단언문에 명시된 기대 결과가 충족된다.
+
+            Notes:
+                None
+            """
         manager = SlotStateMachineManager(max_slots=4)
 
         machine = manager[0]
         assert machine.slot_idx == 0
 
     def test_getitem_invalid_raises_keyerror(self):
-        """Test invalid slot index raises KeyError."""
+        """[TC-STATE_MACHINE-026] Getitem invalid raises keyerror - 테스트 시나리오를 검증한다.
+
+            테스트 목적:
+                Getitem invalid raises keyerror 시나리오에서 기대 동작이 유지되는지 확인한다.
+
+            테스트 시나리오:
+                Given: 테스트 코드에서 준비한 기본 상태
+                When: test_getitem_invalid_raises_keyerror 케이스를 실행하면
+                Then: 단언문에 명시된 기대 결과가 충족된다.
+
+            Notes:
+                None
+            """
         manager = SlotStateMachineManager(max_slots=4)
 
         with pytest.raises(KeyError):
             _ = manager[10]
 
     def test_trigger(self):
-        """Test trigger on specific slot."""
+        """[TC-STATE_MACHINE-027] Trigger - 테스트 시나리오를 검증한다.
+
+            테스트 목적:
+                Trigger 시나리오에서 기대 동작이 유지되는지 확인한다.
+
+            테스트 시나리오:
+                Given: 테스트 코드에서 준비한 기본 상태
+                When: test_trigger 케이스를 실행하면
+                Then: 단언문에 명시된 기대 결과가 충족된다.
+
+            Notes:
+                None
+            """
         manager = SlotStateMachineManager(max_slots=4)
 
         new_state = manager.trigger(0, SlotEvent.START_TEST)
@@ -320,7 +644,19 @@ class TestSlotStateMachineManager:
         assert manager[0].state == SlotState.PREPARING
 
     def test_get_all_states(self):
-        """Test get_all_states."""
+        """[TC-STATE_MACHINE-028] Get all states - 테스트 시나리오를 검증한다.
+
+            테스트 목적:
+                Get all states 시나리오에서 기대 동작이 유지되는지 확인한다.
+
+            테스트 시나리오:
+                Given: 테스트 코드에서 준비한 기본 상태
+                When: test_get_all_states 케이스를 실행하면
+                Then: 단언문에 명시된 기대 결과가 충족된다.
+
+            Notes:
+                None
+            """
         manager = SlotStateMachineManager(max_slots=4)
         manager.trigger(0, SlotEvent.START_TEST)
         manager.trigger(1, SlotEvent.CONNECT)
@@ -333,7 +669,19 @@ class TestSlotStateMachineManager:
         assert states[3] == SlotState.IDLE
 
     def test_get_busy_slots(self):
-        """Test get_busy_slots."""
+        """[TC-STATE_MACHINE-029] Get busy slots - 테스트 시나리오를 검증한다.
+
+            테스트 목적:
+                Get busy slots 시나리오에서 기대 동작이 유지되는지 확인한다.
+
+            테스트 시나리오:
+                Given: 테스트 코드에서 준비한 기본 상태
+                When: test_get_busy_slots 케이스를 실행하면
+                Then: 단언문에 명시된 기대 결과가 충족된다.
+
+            Notes:
+                None
+            """
         manager = SlotStateMachineManager(max_slots=4)
         manager.trigger(0, SlotEvent.START_TEST)
         manager.trigger(1, SlotEvent.CONNECT)
@@ -345,7 +693,19 @@ class TestSlotStateMachineManager:
         assert 2 not in busy
 
     def test_get_running_slots(self):
-        """Test get_running_slots."""
+        """[TC-STATE_MACHINE-030] Get running slots - 테스트 시나리오를 검증한다.
+
+            테스트 목적:
+                Get running slots 시나리오에서 기대 동작이 유지되는지 확인한다.
+
+            테스트 시나리오:
+                Given: 테스트 코드에서 준비한 기본 상태
+                When: test_get_running_slots 케이스를 실행하면
+                Then: 단언문에 명시된 기대 결과가 충족된다.
+
+            Notes:
+                None
+            """
         manager = SlotStateMachineManager(max_slots=4)
         manager.trigger(0, SlotEvent.START_TEST)
         manager.trigger(0, SlotEvent.CONFIGURE)
@@ -357,7 +717,19 @@ class TestSlotStateMachineManager:
         assert 1 not in running
 
     def test_get_idle_slots(self):
-        """Test get_idle_slots."""
+        """[TC-STATE_MACHINE-031] Get idle slots - 테스트 시나리오를 검증한다.
+
+            테스트 목적:
+                Get idle slots 시나리오에서 기대 동작이 유지되는지 확인한다.
+
+            테스트 시나리오:
+                Given: 테스트 코드에서 준비한 기본 상태
+                When: test_get_idle_slots 케이스를 실행하면
+                Then: 단언문에 명시된 기대 결과가 충족된다.
+
+            Notes:
+                None
+            """
         manager = SlotStateMachineManager(max_slots=4)
         manager.trigger(0, SlotEvent.START_TEST)
 
@@ -369,7 +741,19 @@ class TestSlotStateMachineManager:
         assert 3 in idle
 
     def test_reset_all(self):
-        """Test reset_all."""
+        """[TC-STATE_MACHINE-032] Reset all - 테스트 시나리오를 검증한다.
+
+            테스트 목적:
+                Reset all 시나리오에서 기대 동작이 유지되는지 확인한다.
+
+            테스트 시나리오:
+                Given: 테스트 코드에서 준비한 기본 상태
+                When: test_reset_all 케이스를 실행하면
+                Then: 단언문에 명시된 기대 결과가 충족된다.
+
+            Notes:
+                None
+            """
         manager = SlotStateMachineManager(max_slots=4)
         manager.trigger(0, SlotEvent.START_TEST)
         manager.trigger(1, SlotEvent.CONNECT)
@@ -380,7 +764,19 @@ class TestSlotStateMachineManager:
         assert manager[1].state == SlotState.IDLE
 
     def test_to_dict(self):
-        """Test to_dict."""
+        """[TC-STATE_MACHINE-033] To dict - 테스트 시나리오를 검증한다.
+
+            테스트 목적:
+                To dict 시나리오에서 기대 동작이 유지되는지 확인한다.
+
+            테스트 시나리오:
+                Given: 테스트 코드에서 준비한 기본 상태
+                When: test_to_dict 케이스를 실행하면
+                Then: 단언문에 명시된 기대 결과가 충족된다.
+
+            Notes:
+                None
+            """
         manager = SlotStateMachineManager(max_slots=2)
         manager.trigger(0, SlotEvent.START_TEST)
 
@@ -393,7 +789,19 @@ class TestSlotStateMachineManager:
         assert len(data["slots"]) == 2
 
     def test_callback_propagation(self):
-        """Test callback is propagated to all machines."""
+        """[TC-STATE_MACHINE-034] Callback propagation - 테스트 시나리오를 검증한다.
+
+            테스트 목적:
+                Callback propagation 시나리오에서 기대 동작이 유지되는지 확인한다.
+
+            테스트 시나리오:
+                Given: 테스트 코드에서 준비한 기본 상태
+                When: test_callback_propagation 케이스를 실행하면
+                Then: 단언문에 명시된 기대 결과가 충족된다.
+
+            Notes:
+                None
+            """
         callback_calls = []
 
         def callback(slot_idx, old_state, new_state):
@@ -412,7 +820,19 @@ class TestTransitionPaths:
     """Tests for specific transition paths."""
 
     def test_full_success_path(self):
-        """Test full success path: IDLE -> PREPARING -> CONFIGURING -> RUNNING -> COMPLETED."""
+        """[TC-STATE_MACHINE-035] Full success path - 테스트 시나리오를 검증한다.
+
+            테스트 목적:
+                Full success path 시나리오에서 기대 동작이 유지되는지 확인한다.
+
+            테스트 시나리오:
+                Given: 테스트 코드에서 준비한 기본 상태
+                When: test_full_success_path 케이스를 실행하면
+                Then: 단언문에 명시된 기대 결과가 충족된다.
+
+            Notes:
+                None
+            """
         machine = SlotStateMachine(slot_idx=0)
 
         machine.trigger(SlotEvent.START_TEST)
@@ -429,7 +849,19 @@ class TestTransitionPaths:
         assert machine.is_terminal()
 
     def test_fail_during_running(self):
-        """Test failure during running."""
+        """[TC-STATE_MACHINE-036] Fail during running - 테스트 시나리오를 검증한다.
+
+            테스트 목적:
+                Fail during running 시나리오에서 기대 동작이 유지되는지 확인한다.
+
+            테스트 시나리오:
+                Given: 테스트 코드에서 준비한 기본 상태
+                When: test_fail_during_running 케이스를 실행하면
+                Then: 단언문에 명시된 기대 결과가 충족된다.
+
+            Notes:
+                None
+            """
         machine = SlotStateMachine(slot_idx=0)
 
         machine.trigger(SlotEvent.START_TEST)
@@ -441,7 +873,19 @@ class TestTransitionPaths:
         assert machine.context.error_message == "Test failed"
 
     def test_stop_during_running(self):
-        """Test stop during running."""
+        """[TC-STATE_MACHINE-037] Stop during running - 테스트 시나리오를 검증한다.
+
+            테스트 목적:
+                Stop during running 시나리오에서 기대 동작이 유지되는지 확인한다.
+
+            테스트 시나리오:
+                Given: 테스트 코드에서 준비한 기본 상태
+                When: test_stop_during_running 케이스를 실행하면
+                Then: 단언문에 명시된 기대 결과가 충족된다.
+
+            Notes:
+                None
+            """
         machine = SlotStateMachine(slot_idx=0)
 
         machine.trigger(SlotEvent.START_TEST)
@@ -455,7 +899,19 @@ class TestTransitionPaths:
         assert machine.state == SlotState.IDLE
 
     def test_retry_after_failure(self):
-        """Test retry after failure."""
+        """[TC-STATE_MACHINE-038] Retry after failure - 테스트 시나리오를 검증한다.
+
+            테스트 목적:
+                Retry after failure 시나리오에서 기대 동작이 유지되는지 확인한다.
+
+            테스트 시나리오:
+                Given: 테스트 코드에서 준비한 기본 상태
+                When: test_retry_after_failure 케이스를 실행하면
+                Then: 단언문에 명시된 기대 결과가 충족된다.
+
+            Notes:
+                None
+            """
         machine = SlotStateMachine(slot_idx=0)
 
         machine.trigger(SlotEvent.START_TEST)
@@ -466,7 +922,19 @@ class TestTransitionPaths:
         assert machine.state == SlotState.PREPARING
 
     def test_reset_after_error(self):
-        """Test reset after error."""
+        """[TC-STATE_MACHINE-039] Reset after error - 테스트 시나리오를 검증한다.
+
+            테스트 목적:
+                Reset after error 시나리오에서 기대 동작이 유지되는지 확인한다.
+
+            테스트 시나리오:
+                Given: 테스트 코드에서 준비한 기본 상태
+                When: test_reset_after_error 케이스를 실행하면
+                Then: 단언문에 명시된 기대 결과가 충족된다.
+
+            Notes:
+                None
+            """
         machine = SlotStateMachine(slot_idx=0)
 
         machine.trigger(SlotEvent.START_TEST)
@@ -477,7 +945,19 @@ class TestTransitionPaths:
         assert machine.state == SlotState.IDLE
 
     def test_pause_and_resume(self):
-        """Test pause and resume during running."""
+        """[TC-STATE_MACHINE-040] Pause and resume - 테스트 시나리오를 검증한다.
+
+            테스트 목적:
+                Pause and resume 시나리오에서 기대 동작이 유지되는지 확인한다.
+
+            테스트 시나리오:
+                Given: 테스트 코드에서 준비한 기본 상태
+                When: test_pause_and_resume 케이스를 실행하면
+                Then: 단언문에 명시된 기대 결과가 충족된다.
+
+            Notes:
+                None
+            """
         machine = SlotStateMachine(slot_idx=0)
 
         machine.trigger(SlotEvent.START_TEST)
@@ -491,11 +971,19 @@ class TestTransitionPaths:
         assert machine.state == SlotState.RUNNING
 
     def test_start_test_after_error(self):
-        """Test START_TEST after error state (recovery scenario).
+        """[TC-STATE_MACHINE-041] Start test after error - 테스트 시나리오를 검증한다.
 
-        When a slot enters ERROR state and user takes corrective action,
-        they should be able to restart the test without calling RESET first.
-        """
+            테스트 목적:
+                Start test after error 시나리오에서 기대 동작이 유지되는지 확인한다.
+
+            테스트 시나리오:
+                Given: 테스트 코드에서 준비한 기본 상태
+                When: test_start_test_after_error 케이스를 실행하면
+                Then: 단언문에 명시된 기대 결과가 충족된다.
+
+            Notes:
+                None
+            """
         machine = SlotStateMachine(slot_idx=0)
 
         # 테스트 시작 -> 에러 발생
@@ -520,7 +1008,19 @@ class TestTransitionPaths:
         assert machine.context.started_at is not None
 
     def test_start_test_after_failed(self):
-        """Test START_TEST after failed state."""
+        """[TC-STATE_MACHINE-042] Start test after failed - 테스트 시나리오를 검증한다.
+
+            테스트 목적:
+                Start test after failed 시나리오에서 기대 동작이 유지되는지 확인한다.
+
+            테스트 시나리오:
+                Given: 테스트 코드에서 준비한 기본 상태
+                When: test_start_test_after_failed 케이스를 실행하면
+                Then: 단언문에 명시된 기대 결과가 충족된다.
+
+            Notes:
+                None
+            """
         machine = SlotStateMachine(slot_idx=0)
 
         machine.trigger(SlotEvent.START_TEST)
@@ -538,7 +1038,19 @@ class TestTransitionPaths:
         assert machine.context.error_message is None
 
     def test_start_test_after_completed(self):
-        """Test START_TEST after completed state."""
+        """[TC-STATE_MACHINE-043] Start test after completed - 테스트 시나리오를 검증한다.
+
+            테스트 목적:
+                Start test after completed 시나리오에서 기대 동작이 유지되는지 확인한다.
+
+            테스트 시나리오:
+                Given: 테스트 코드에서 준비한 기본 상태
+                When: test_start_test_after_completed 케이스를 실행하면
+                Then: 단언문에 명시된 기대 결과가 충족된다.
+
+            Notes:
+                None
+            """
         machine = SlotStateMachine(slot_idx=0)
 
         machine.trigger(SlotEvent.START_TEST)

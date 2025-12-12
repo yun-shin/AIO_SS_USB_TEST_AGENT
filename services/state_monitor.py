@@ -87,9 +87,7 @@ class StateMonitor:
 
         # 콜백
         self._on_change: Optional[Callable[[SlotSnapshot], Awaitable[None]]] = None
-        self._on_hang_detected: Optional[
-            Callable[[int, float], Awaitable[None]]
-        ] = None
+        self._on_hang_detected: Optional[Callable[[int, float], Awaitable[None]]] = None
 
         # Hang 감지
         self._last_progress_change: dict[int, float] = {}

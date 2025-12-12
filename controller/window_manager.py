@@ -6,16 +6,34 @@ Supports per-slot process management with PID mapping.
 """
 
 import asyncio
+import warnings
 from typing import Optional
 
-from pywinauto import Application
-from pywinauto.findwindows import ElementNotFoundError
+try:  # pragma: no cover - optional dependency
+    from pywinauto import Application
+    from pywinauto.findwindows import ElementNotFoundError
+except ImportError:  # pragma: no cover - allow import without pywinauto for tests
+    Application = None
+
+    class ElementNotFoundError(Exception):
+        """Fallback when pywinauto is unavailable."""
+
 
 from config.constants import TimeoutConfig, SlotConfig
 from infrastructure.process_manager import SlotProcessManager
 from utils.logging import get_logger
 
 logger = get_logger(__name__)
+
+_PYWINAUTO_32BIT_WARNING_REGEX = (
+    r"32-bit application should be automated using 32-bit Python.*"
+)
+warnings.filterwarnings(
+    "ignore",
+    message=_PYWINAUTO_32BIT_WARNING_REGEX,
+    category=UserWarning,
+    module=r"pywinauto\.application",
+)
 
 
 class SlotWindowManager:
@@ -40,6 +58,7 @@ class SlotWindowManager:
         self._app: Optional[Application] = None
         self._main_window = None
         self._pid: Optional[int] = None
+        self._available = Application is not None
 
     @property
     def is_connected(self) -> bool:
@@ -48,12 +67,16 @@ class SlotWindowManager:
         Returns True only if app, window are set, process is running,
         AND the window is still valid and responsive.
         """
+        if not self._available:
+            return False
+
         if self._app is None or self._main_window is None or self._pid is None:
             return False
 
         # 프로세스가 실제로 살아있는지 확인
         try:
             import psutil
+
             if not psutil.pid_exists(self._pid):
                 # 프로세스가 죽었으면 연결 정보 정리
                 self._clear_connection()
@@ -108,6 +131,14 @@ class SlotWindowManager:
         Returns:
             Connection success status.
         """
+        if not self._available:
+            logger.error(
+                "pywinauto is not available; cannot connect to PID",
+                slot_idx=self.slot_idx,
+                pid=pid,
+            )
+            return False
+
         start_time = asyncio.get_event_loop().time()
 
         while asyncio.get_event_loop().time() - start_time < timeout:
@@ -194,7 +225,9 @@ class SlotWindowManager:
             ctrl = getattr(self._main_window, name, None)
             if ctrl is not None:
                 # wrapper_object()를 호출해서 실제 컨트롤 반환
-                return ctrl.wrapper_object() if hasattr(ctrl, 'wrapper_object') else ctrl
+                return (
+                    ctrl.wrapper_object() if hasattr(ctrl, "wrapper_object") else ctrl
+                )
         except Exception:
             pass
 
@@ -430,4 +463,3 @@ class WindowManager:
                 pid = slot_window.pid
                 if pid and not self._process_manager.is_active(slot_idx):
                     slot_window.disconnect()
-

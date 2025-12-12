@@ -386,32 +386,44 @@ class AgentState(StrEnum):
 
 
 class TimeoutConfig:
-    """Timeout configuration constants."""
+    """Timeout configuration constants.
+
+    통신, 프로세스, UI 대기 시간에 대한 단일 기준값.
+    """
 
     # WebSocket 관련
-    WEBSOCKET_CONNECT_TIMEOUT = 10  # 초
-    WEBSOCKET_PING_INTERVAL = 30  # 초
-    WEBSOCKET_PING_TIMEOUT = 10  # 초
-    WEBSOCKET_RECONNECT_DELAY = 5  # 초
+    WEBSOCKET_CONNECT_TIMEOUT = 10.0
+    WEBSOCKET_PING_INTERVAL = 30.0
+    WEBSOCKET_PING_TIMEOUT = 10.0
+    WEBSOCKET_RECONNECT_DELAY = 5.0
     WEBSOCKET_MAX_RECONNECT_ATTEMPTS = 10
 
     # 상태 체크 관련
-    STATE_CHECK_INTERVAL = 10  # 초
+    STATE_CHECK_INTERVAL = 10.0
     STATE_CHECK_RETRIES = 10
-    STATE_CHECK_RETRY_DELAY = 5  # 초
+    STATE_CHECK_RETRY_DELAY = 5.0
 
     # 프로세스 관련
-    PROCESS_HANG_THRESHOLD = 300  # 초 (5분)
-    PROCESS_START_TIMEOUT = 30  # 초
+    PROCESS_HANG_THRESHOLD = 300.0  # 초 (5분)
+    PROCESS_START_TIMEOUT = 30.0  # 초
+    PROCESS_TERMINATE_TIMEOUT = 10.0  # 초
+
+    # 포커스/클릭 재시도
     FOCUS_RETRY_COUNT = 10
-    FOCUS_RETRY_DELAY = 2  # 초
+    FOCUS_RETRY_DELAY = 2.0  # 초
 
     # 버튼 대기 관련
-    BUTTON_WAIT_TIMEOUT = 30  # 초
+    BUTTON_WAIT_TIMEOUT = 30.0  # 초
     BUTTON_CHECK_INTERVAL = 0.5  # 초
+    CONTACT_BUTTON_TIMEOUT = 15.0  # 초
+    TEST_BUTTON_TIMEOUT = 30.0  # 초
+
+    # 윈도우/드라이브 대기
+    WINDOW_CONNECT_TIMEOUT = 10.0  # 초
+    DRIVE_SCAN_TIMEOUT = 30.0  # 초
 
     # 엘리먼트 관련
-    ELEMENT_WAIT = 10  # 초 (UI 엘리먼트 대기 기본 시간)
+    ELEMENT_WAIT = 10.0  # 초 (UI 엘리먼트 대기 기본 시간)
 
 
 class SlotStatus(StrEnum):
@@ -505,35 +517,3 @@ class RetryConfig:
     # Post-action delays
     FOCUS_SETTLE_DELAY: float = 0.3  # 포커스 전환 후 대기 (기존 0.2 → 0.3)
     CLICK_SETTLE_DELAY: float = 0.5  # 클릭 후 대기 (기존 0.3 → 0.5)
-
-
-class TimeoutConfig:
-    """Timeout configuration constants.
-
-    Wait timeouts for various operations. Generous values allow for slow USB
-    devices and system variations.
-    """
-
-    # Wait for button enabled timeouts
-    CONTACT_BUTTON_TIMEOUT: float = 15.0  # Contact 버튼 활성화 대기 (기존 5.0 → 15.0)
-    TEST_BUTTON_TIMEOUT: float = 30.0  # Test 버튼 활성화 대기 (기존 10-15 → 30.0)
-
-    # Check intervals for polling
-    BUTTON_CHECK_INTERVAL: float = 0.5  # 버튼 상태 확인 간격 (기존 0.3 → 0.5)
-
-    # General operation timeouts
-    WINDOW_CONNECT_TIMEOUT: float = 10.0  # 윈도우 연결 타임아웃
-    DRIVE_SCAN_TIMEOUT: float = 30.0  # 드라이브 스캔 타임아웃
-
-    # Process management timeouts
-    PROCESS_START_TIMEOUT: float = 15.0  # USB Test.exe 프로세스 시작 타임아웃
-    PROCESS_TERMINATE_TIMEOUT: float = 10.0  # 프로세스 종료 타임아웃
-
-    # UI element timeouts
-    ELEMENT_WAIT: float = 10.0  # UI 요소 활성화 대기 타임아웃
-
-    # WebSocket timeouts
-    WEBSOCKET_CONNECT_TIMEOUT: float = 10.0  # WebSocket 연결 타임아웃
-    WEBSOCKET_PING_INTERVAL: float = 30.0  # WebSocket ping 간격
-    WEBSOCKET_PING_TIMEOUT: float = 10.0  # WebSocket ping 타임아웃
-    WEBSOCKET_RECONNECT_DELAY: float = 5.0  # WebSocket 재연결 대기 시간

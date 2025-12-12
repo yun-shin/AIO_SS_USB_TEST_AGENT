@@ -62,6 +62,8 @@ from services import (
     StateMonitor,
     TestExecutor,
     UIStateChange,
+    WorkerPool,
+    WorkerPriority,
 )
 from services.batch_executor import BatchExecutor, BatchExecutorManager, BatchProgress
 from utils.logging import bind_context, get_ilogger, get_logger, setup_logging
@@ -135,6 +137,9 @@ class Agent:
 
         # Slot State Machine Manager (슬롯별 상태 관리)
         self._slot_manager: SlotStateMachineManager | None = None
+
+        # Worker Pool (top/scheduler/slot worker orchestration)
+        self._worker_pool: WorkerPool | None = None
 
     @property
     def container(self) -> Container:
@@ -261,9 +266,7 @@ class Agent:
             logger=get_ilogger("process_monitor"),
             max_slots=SlotConfig.MAX_SLOTS,
         )
-        self._process_monitor.set_termination_callback(
-            self._on_process_terminated
-        )
+        self._process_monitor.set_termination_callback(self._on_process_terminated)
         logger.info("Process monitor initialized")
 
         # MFC UI 모니터 초기화 (UI 상태 폴링)
@@ -275,12 +278,8 @@ class Agent:
         )
         self._mfc_ui_monitor.set_change_callback(self._on_mfc_ui_changed)
         self._mfc_ui_monitor.set_poll_callback(self._on_mfc_ui_polled)
-        self._mfc_ui_monitor.set_test_completed_callback(
-            self._on_mfc_test_completed
-        )
-        self._mfc_ui_monitor.set_user_intervention_callback(
-            self._on_user_intervention
-        )
+        self._mfc_ui_monitor.set_test_completed_callback(self._on_mfc_test_completed)
+        self._mfc_ui_monitor.set_user_intervention_callback(self._on_user_intervention)
         logger.info("MFC UI monitor initialized")
 
         # 메모리 정리 콜백 등록
@@ -296,6 +295,13 @@ class Agent:
 
         # 메시지 핸들러 등록
         self._register_handlers()
+
+        # 워커 풀 초기화 및 시작 (top/scheduler/slot)
+        self._worker_pool = WorkerPool(
+            slot_count=SlotConfig.MAX_SLOTS,
+        )
+        await self._worker_pool.start()
+        logger.info("Worker pool initialized")
 
         try:
             # 메모리 모니터 시작
@@ -344,6 +350,119 @@ class Agent:
 
         logger.info("Cleanup callbacks registered for memory management")
 
+    async def _enqueue_top(
+        self,
+        name: str,
+        coro_factory: Callable[[], Awaitable[bool]],
+        priority: WorkerPriority = WorkerPriority.IMMEDIATE,
+        drop_if_full: bool = False,
+    ) -> bool:
+        """Top(worker0)에 메시지/태스크를 적재한다."""
+        if self._worker_pool:
+            return await self._worker_pool.enqueue_top(
+                name=name,
+                coro_factory=coro_factory,
+                priority=priority,
+                drop_if_full=drop_if_full,
+            )
+
+        if not self._ws_client:
+            logger.warning("WebSocket client not ready", task=name)
+            return False
+
+        return await coro_factory()
+
+    async def _queue_state_update(
+        self,
+        slot_idx: int,
+        state_data: dict,
+        priority: WorkerPriority = WorkerPriority.IMMEDIATE,
+        drop_if_full: bool = False,
+    ) -> bool:
+        """상태 업데이트를 Top 워커에 적재."""
+
+        async def _send() -> bool:
+            if not self._ws_client:
+                return False
+            return await self._ws_client.send_state_update(
+                slot_idx=slot_idx,
+                state_data=state_data,
+            )
+
+        return await self._enqueue_top(
+            name=f"state_update:{slot_idx}",
+            coro_factory=_send,
+            priority=priority,
+            drop_if_full=drop_if_full,
+        )
+
+    async def _queue_test_result(
+        self,
+        slot_idx: int,
+        success: bool,
+        result_data: dict | None = None,
+        priority: WorkerPriority = WorkerPriority.HIGH,
+        drop_if_full: bool = False,
+    ) -> bool:
+        """테스트 완료/실패 결과를 Top 워커에 적재."""
+
+        async def _send() -> bool:
+            if not self._ws_client:
+                return False
+            return await self._ws_client.send_test_completed(
+                slot_idx=slot_idx,
+                success=success,
+                result_data=result_data,
+            )
+
+        return await self._enqueue_top(
+            name=f"test_result:{slot_idx}",
+            coro_factory=_send,
+            priority=priority,
+            drop_if_full=drop_if_full,
+        )
+
+    async def _queue_backend_error(
+        self,
+        message: dict,
+        priority: WorkerPriority = WorkerPriority.HIGH,
+        drop_if_full: bool = False,
+    ) -> bool:
+        """일반 메시지를 Top 워커에 적재."""
+
+        async def _send() -> bool:
+            if not self._ws_client:
+                return False
+            return await self._ws_client.send(message)
+
+        return await self._enqueue_top(
+            name="backend_message",
+            coro_factory=_send,
+            priority=priority,
+            drop_if_full=drop_if_full,
+        )
+
+    async def _schedule_slot_task(
+        self,
+        slot_idx: int,
+        name: str,
+        task: Callable[[], Awaitable[None]],
+        priority: WorkerPriority = WorkerPriority.NORMAL,
+        drop_if_full: bool = False,
+    ) -> bool:
+        """Slot(worker1-x)에 태스크를 적재."""
+        if self._worker_pool:
+            return await self._worker_pool.enqueue_slot(
+                slot_idx=slot_idx,
+                name=name,
+                coro_factory=task,
+                priority=priority,
+                drop_if_full=drop_if_full,
+            )
+
+        await task()
+        return True
+
     def _on_slot_state_change(
         self,
         slot_idx: int,
@@ -382,7 +501,12 @@ class Agent:
                 self._mfc_ui_monitor.add_monitored_slot(slot_idx)
 
         # 상태가 완료/실패/에러로 전환되면 모니터링 비활성화
-        elif new_state in (SlotState.COMPLETED, SlotState.FAILED, SlotState.ERROR, SlotState.IDLE):
+        elif new_state in (
+            SlotState.COMPLETED,
+            SlotState.FAILED,
+            SlotState.ERROR,
+            SlotState.IDLE,
+        ):
             if self._process_monitor:
                 self._process_monitor.unwatch_slot(slot_idx)
             if self._mfc_ui_monitor:
@@ -428,27 +552,27 @@ class Agent:
                 logger.warning("Could not transition to ERROR state", error=str(e))
                 if slot_machine:
                     slot_machine.force_state(
-                        SlotState.ERROR,
-                        f"Process terminated: {event.reason.value}"
+                        SlotState.ERROR, f"Process terminated: {event.reason.value}"
                     )
 
         # Backend에 에러 알림
-        if self._ws_client:
-            await self._ws_client.send(
-                {
-                    "type": AgentMessageType.ERROR.value,
-                    "data": {
-                        "slot_idx": event.slot_idx,
-                        "error_code": "PROCESS_TERMINATED",
-                        "error_message": (
-                            f"USB Test.exe process terminated unexpectedly "
-                            f"(PID: {event.pid}, Reason: {event.reason.value})"
-                        ),
-                        "was_running": event.was_running,
-                        "timestamp": event.timestamp.isoformat(),
-                    },
-                }
-            )
+        await self._queue_backend_error(
+            {
+                "type": AgentMessageType.ERROR.value,
+                "data": {
+                    "slot_idx": event.slot_idx,
+                    "error_code": "PROCESS_TERMINATED",
+                    "error_message": (
+                        "USB Test.exe process terminated unexpectedly "
+                        f"(PID: {event.pid}, Reason: {event.reason.value})"
+                    ),
+                    "was_running": event.was_running,
+                    "timestamp": event.timestamp.isoformat(),
+                },
+            },
+            priority=WorkerPriority.HIGH,
+            drop_if_full=True,
+        )
 
         # MFC UI 모니터링에서도 제거
         if self._mfc_ui_monitor:
@@ -537,9 +661,8 @@ class Agent:
             # Batch 모드: 계산된 값 사용
             # current_loop = (current_batch - 1) * loop_step + mfc_current_loop
             calculated_loop = (
-                (context.current_batch - 1) * context.loop_step
-                + state.current_loop
-            )
+                context.current_batch - 1
+            ) * context.loop_step + state.current_loop
             # total_loop는 전체 loop_count 사용
             total_loop = context.total_loop
 
@@ -557,7 +680,7 @@ class Agent:
                 # PASS, TEST, IDLE 모두 running으로 (batch 진행 중)
                 status = "running"
 
-            await self._ws_client.send_state_update(
+            await self._queue_state_update(
                 slot_idx=slot_idx,
                 state_data={
                     "status": status,
@@ -568,11 +691,13 @@ class Agent:
                     "total_batch": context.total_batch,
                     "current_phase": state.test_phase.name,
                 },
+                priority=WorkerPriority.IMMEDIATE,
+                drop_if_full=True,
             )
         else:
             # 단일 실행 모드: 기존 방식
             status = self._determine_status(state)
-            await self._ws_client.send_state_update(
+            await self._queue_state_update(
                 slot_idx=slot_idx,
                 state_data={
                     "status": status,
@@ -581,6 +706,8 @@ class Agent:
                     "total_loop": state.total_loop,
                     "current_phase": state.test_phase.name,
                 },
+                priority=WorkerPriority.IMMEDIATE,
+                drop_if_full=True,
             )
 
     async def _on_mfc_ui_changed(self, change: UIStateChange) -> None:
@@ -600,19 +727,23 @@ class Agent:
 
         # 상태 변경은 _on_mfc_ui_polled에서 전송하므로 여기서는 로깅만
         # 단, FAIL 상태 변경은 즉시 알림 (중요한 이벤트)
-        if change.current_state and change.current_state.process_state == ProcessState.FAIL:
+        if (
+            change.current_state
+            and change.current_state.process_state == ProcessState.FAIL
+        ):
             logger.warning(
                 "Test FAIL detected",
                 slot_idx=change.slot_idx,
             )
-            if self._ws_client:
-                await self._ws_client.send_state_update(
-                    slot_idx=change.slot_idx,
-                    state_data={
-                        "status": "failed",
-                        "error": "Test failed",
-                    },
-                )
+            await self._queue_state_update(
+                slot_idx=change.slot_idx,
+                state_data={
+                    "status": "failed",
+                    "error": "Test failed",
+                },
+                priority=WorkerPriority.IMMEDIATE,
+                drop_if_full=True,
+            )
 
     async def _on_mfc_test_completed(
         self,
@@ -683,34 +814,39 @@ class Agent:
                 )
 
         # Backend에 알림 (FAIL/STOP 또는 단일 모드 완료 시에만)
-        if self._ws_client:
-            if final_state == ProcessState.FAIL:
-                await self._ws_client.send_state_update(
-                    slot_idx=slot_idx,
-                    state_data={
-                        "status": "failed",
-                        "error": "Test failed",
-                        "final_state": final_state.name,
-                    },
-                )
-            elif final_state == ProcessState.STOP:
-                await self._ws_client.send_state_update(
-                    slot_idx=slot_idx,
-                    state_data={
-                        "status": "stopped",
-                        "final_state": final_state.name,
-                    },
-                )
-            elif not is_batch_mode:
-                # 단일 모드 완료
-                await self._ws_client.send_test_completed(
-                    slot_idx=slot_idx,
-                    success=True,
-                    result_data={
-                        "final_state": final_state.name,
-                        "detected_via": "mfc_ui_monitor",
-                    },
-                )
+        if final_state == ProcessState.FAIL:
+            await self._queue_state_update(
+                slot_idx=slot_idx,
+                state_data={
+                    "status": "failed",
+                    "error": "Test failed",
+                    "final_state": final_state.name,
+                },
+                priority=WorkerPriority.IMMEDIATE,
+                drop_if_full=True,
+            )
+        elif final_state == ProcessState.STOP:
+            await self._queue_state_update(
+                slot_idx=slot_idx,
+                state_data={
+                    "status": "stopped",
+                    "final_state": final_state.name,
+                },
+                priority=WorkerPriority.IMMEDIATE,
+                drop_if_full=True,
+            )
+        elif not is_batch_mode:
+            # 단일 모드 완료
+            await self._queue_test_result(
+                slot_idx=slot_idx,
+                success=True,
+                result_data={
+                    "final_state": final_state.name,
+                    "detected_via": "mfc_ui_monitor",
+                },
+                priority=WorkerPriority.IMMEDIATE,
+                drop_if_full=True,
+            )
 
     async def _on_user_intervention(
         self,
@@ -733,18 +869,19 @@ class Agent:
         )
 
         # Backend에 사용자 개입 알림
-        if self._ws_client:
-            await self._ws_client.send(
-                {
-                    "type": AgentMessageType.ERROR.value,
-                    "data": {
-                        "slot_idx": slot_idx,
-                        "error_code": "USER_INTERVENTION",
-                        "error_message": description,
-                        "severity": "warning",
-                    },
-                }
-            )
+        await self._queue_backend_error(
+            {
+                "type": AgentMessageType.ERROR.value,
+                "data": {
+                    "slot_idx": slot_idx,
+                    "error_code": "USER_INTERVENTION",
+                    "error_message": description,
+                    "severity": "warning",
+                },
+            },
+            priority=WorkerPriority.HIGH,
+            drop_if_full=True,
+        )
 
     def _register_handlers(self) -> None:
         """Register Backend message handlers."""
@@ -791,28 +928,79 @@ class Agent:
             logger.warning("MFC Controller not available or invalid slot")
             return
 
-        # Get slot state machine
+        # 슬롯 유효성 확인
+        try:
+            self._slot_manager[slot_idx]
+        except KeyError:
+            logger.error("Invalid slot index", slot_idx=slot_idx)
+            await self._queue_state_update(
+                slot_idx=slot_idx,
+                state_data={
+                    "status": "error",
+                    "error": f"Invalid slot index {slot_idx}",
+                },
+                priority=WorkerPriority.HIGH,
+            )
+            return
+
+        # 즉시 큐잉 상태 알림 (Top worker로 전송)
+        await self._queue_state_update(
+            slot_idx=slot_idx,
+            state_data={"status": "queued"},
+            priority=WorkerPriority.IMMEDIATE,
+            drop_if_full=True,
+        )
+
+        scheduled = await self._schedule_slot_task(
+            slot_idx=slot_idx,
+            name="start_test",
+            task=lambda: self._execute_start_test(slot_idx, test_config),
+            priority=WorkerPriority.HIGH,
+            drop_if_full=True,
+        )
+
+        if not scheduled:
+            await self._queue_state_update(
+                slot_idx=slot_idx,
+                state_data={
+                    "status": "error",
+                    "error": "start_test queue is full",
+                },
+                priority=WorkerPriority.HIGH,
+                drop_if_full=True,
+            )
+
+    async def _execute_start_test(
+        self,
+        slot_idx: int,
+        test_config: dict,
+    ) -> None:
+        """슬롯 워커에서 실행되는 실제 테스트 시작 로직."""
+        if not self._mfc_controller or not self._slot_manager:
+            logger.warning("Controller or slot manager missing")
+            return
+
         try:
             slot_machine = self._slot_manager[slot_idx]
         except KeyError:
-            logger.error("Invalid slot index", slot_idx=slot_idx)
+            logger.error("Invalid slot index during execution", slot_idx=slot_idx)
             return
 
-        # Check if slot is busy
         if slot_machine.is_busy():
             logger.warning(
                 "Slot is busy, cannot start test",
                 slot_idx=slot_idx,
                 current_state=slot_machine.state.value,
             )
-            if self._ws_client:
-                await self._ws_client.send_state_update(
-                    slot_idx=slot_idx,
-                    state_data={
-                        "status": "error",
-                        "error": f"Slot {slot_idx} is busy ({slot_machine.state.value})",
-                    },
-                )
+            await self._queue_state_update(
+                slot_idx=slot_idx,
+                state_data={
+                    "status": "error",
+                    "error": (f"Slot {slot_idx} is busy ({slot_machine.state.value})"),
+                },
+                priority=WorkerPriority.HIGH,
+                drop_if_full=True,
+            )
             return
 
         try:
@@ -836,7 +1024,17 @@ class Agent:
                 if not connected:
                     slot_machine.trigger(
                         SlotEvent.ERROR,
-                        error_message="USB Test.exe에 연결할 수 없습니다. 프로그램 경로를 확인하세요.",
+                        error_message=(
+                            "USB Test.exe에 연결할 수 없습니다. 프로그램 경로를 확인하세요."
+                        ),
+                    )
+                    await self._queue_state_update(
+                        slot_idx=slot_idx,
+                        state_data={
+                            "status": "error",
+                            "error": "Failed to connect USB Test.exe",
+                        },
+                        priority=WorkerPriority.HIGH,
                     )
                     return
 
@@ -849,6 +1047,8 @@ class Agent:
 
             # TestConfig 객체 생성
             from domain.models.test_config import TestConfig
+            from domain.models.test_config import PreconditionConfig
+            from utils import to_capacity, to_method, to_preset, to_file
 
             # 받은 설정 로깅
             logger.info(
@@ -857,23 +1057,22 @@ class Agent:
                 test_config=test_config,
             )
 
-            # 헬퍼 함수로 Enum 변환 단순화
-            from utils import to_capacity, to_method, to_preset, to_file
-            from domain.models.test_config import PreconditionConfig
-
             # Precondition 설정 처리 (Backend에서 capacity 계산해서 보내줌)
+            # precondition이 None이거나 enabled=False이면 비활성화
             precondition_data = test_config.get("precondition")
-            precondition_config = None
             if precondition_data and precondition_data.get("enabled"):
-                # capacity를 Enum으로 변환 (Backend에서 계산된 값 사용)
                 precond_capacity_str = precondition_data.get("capacity")
-                precond_capacity = to_capacity(precond_capacity_str) if precond_capacity_str else None
+                precond_capacity = (
+                    to_capacity(precond_capacity_str) if precond_capacity_str else None
+                )
 
                 logger.info(
                     "Precondition config from Backend",
                     enabled=True,
                     capacity_str=precond_capacity_str,
-                    capacity_enum=precond_capacity.value if precond_capacity else None,
+                    capacity_enum=(
+                        precond_capacity.value if precond_capacity else None
+                    ),
                     method=precondition_data.get("method", "0HR"),
                     loop_count=precondition_data.get("loop_count", 1),
                 )
@@ -884,15 +1083,20 @@ class Agent:
                     capacity=precond_capacity,
                     loop_count=precondition_data.get("loop_count", 1),
                 )
+            else:
+                # precondition이 None이거나 enabled=False면 비활성화
+                logger.info(
+                    "Precondition disabled",
+                    precondition_data=precondition_data,
+                )
+                precondition_config = PreconditionConfig(enabled=False)
 
             # Main test 설정 처리 (새로운 'test' 구조만 지원, legacy 제거)
             test_data = test_config.get("test")
             if not test_data:
-                logger.error(
-                    "Missing 'test' field in config - Backend must send new structure",
-                    test_config=test_config,
-                )
-                raise ValueError("Missing 'test' field in config from Backend")
+                error_msg = "Missing 'test' field in config from Backend"
+                logger.error(error_msg, test_config=test_config)
+                raise ValueError(error_msg)
 
             main_capacity = to_capacity(test_data.get("capacity", "4GB"))
             main_method = to_method(test_data.get("method", "0HR"))
@@ -907,7 +1111,7 @@ class Agent:
                 loop_step=main_loop_step,
             )
 
-            # Config kwargs 구성 (precondition은 있을 때만 포함)
+            # Config kwargs 구성 (precondition 항상 포함)
             config_kwargs = {
                 "slot_idx": slot_idx,
                 "jira_no": test_config.get("jira_no", ""),
@@ -921,12 +1125,28 @@ class Agent:
                 "loop_step": main_loop_step,
                 "test_name": test_config.get("test_name", "USB Test"),
                 "drive_capacity_gb": test_config.get("drive_capacity_gb", 0.0),
+                "precondition": precondition_config,
             }
 
-            if precondition_config is not None:
-                config_kwargs["precondition"] = precondition_config
-
             config = TestConfig(**config_kwargs)
+            validation_errors = config.validate()
+            if validation_errors:
+                error_msg = "; ".join(validation_errors)
+                logger.error(
+                    "Invalid test config received",
+                    slot_idx=slot_idx,
+                    errors=validation_errors,
+                )
+                slot_machine.trigger(
+                    SlotEvent.ERROR,
+                    error_message=error_msg,
+                )
+                await self._queue_state_update(
+                    slot_idx=slot_idx,
+                    state_data={"status": "error", "error": error_msg},
+                    priority=WorkerPriority.HIGH,
+                )
+                return
 
             # State transition: CONFIGURE (if not already)
             if slot_machine.state == SlotState.PREPARING:
@@ -953,19 +1173,20 @@ class Agent:
 
                 # Progress callback: WebSocket으로 진행 상황 전송
                 async def on_batch_progress(progress: BatchProgress) -> None:
-                    if self._ws_client:
-                        await self._ws_client.send_state_update(
-                            slot_idx=progress.slot_idx,
-                            state_data={
-                                "status": "running",
-                                "current_batch": progress.current_batch,
-                                "total_batch": progress.total_batch,
-                                "current_loop": progress.current_loop,
-                                "total_loop": progress.total_loop,
-                                "loop_step": progress.loop_step,
-                                "progress_percent": progress.progress_percent,
-                            },
-                        )
+                    await self._queue_state_update(
+                        slot_idx=progress.slot_idx,
+                        state_data={
+                            "status": "running",
+                            "current_batch": progress.current_batch,
+                            "total_batch": progress.total_batch,
+                            "current_loop": progress.current_loop,
+                            "total_loop": progress.total_loop,
+                            "loop_step": progress.loop_step,
+                            "progress_percent": progress.progress_percent,
+                        },
+                        priority=WorkerPriority.IMMEDIATE,
+                        drop_if_full=True,
+                    )
 
                 # Batch 실행 (백그라운드 태스크로)
                 asyncio.create_task(
@@ -1000,14 +1221,13 @@ class Agent:
                 slot_idx=slot_idx,
                 error=str(e),
             )
-            if self._ws_client:
-                await self._ws_client.send_state_update(
-                    slot_idx=slot_idx,
-                    state_data={"status": "error", "error": str(e)},
-                )
+            await self._queue_state_update(
+                slot_idx=slot_idx,
+                state_data={"status": "error", "error": str(e)},
+                priority=WorkerPriority.HIGH,
+            )
         except Exception as e:
             logger.error("Failed to start test", slot_idx=slot_idx, error=str(e))
-            # Transition to ERROR state
             try:
                 slot_machine.trigger(SlotEvent.ERROR, error_message=str(e))
             except InvalidTransitionError:
@@ -1043,27 +1263,27 @@ class Agent:
                     slot_idx=slot_idx,
                     total_loop=config.loop_count,
                 )
-                if self._ws_client:
-                    await self._ws_client.send_state_update(
-                        slot_idx=slot_idx,
-                        state_data={
-                            "status": "completed",
-                            "message": "All batches completed",
-                        },
-                    )
+                await self._queue_state_update(
+                    slot_idx=slot_idx,
+                    state_data={
+                        "status": "completed",
+                        "message": "All batches completed",
+                    },
+                    priority=WorkerPriority.HIGH,
+                )
             else:
                 logger.warning(
                     "Batch test failed or cancelled",
                     slot_idx=slot_idx,
                 )
-                if self._ws_client:
-                    await self._ws_client.send_state_update(
-                        slot_idx=slot_idx,
-                        state_data={
-                            "status": "failed",
-                            "message": "Batch test failed or cancelled",
-                        },
-                    )
+                await self._queue_state_update(
+                    slot_idx=slot_idx,
+                    state_data={
+                        "status": "failed",
+                        "message": "Batch test failed or cancelled",
+                    },
+                    priority=WorkerPriority.HIGH,
+                )
         except Exception as e:
             logger.error(
                 "Batch test error",
@@ -1092,19 +1312,71 @@ class Agent:
             logger.warning("MFC Controller not available or invalid slot")
             return
 
-        # Get slot state machine
+        try:
+            self._slot_manager[slot_idx]
+        except KeyError:
+            logger.error("Invalid slot index", slot_idx=slot_idx)
+            await self._queue_state_update(
+                slot_idx=slot_idx,
+                state_data={
+                    "status": "error",
+                    "error": f"Invalid slot index {slot_idx}",
+                },
+                priority=WorkerPriority.HIGH,
+            )
+            return
+
+        await self._queue_state_update(
+            slot_idx=slot_idx,
+            state_data={"status": "stopping"},
+            priority=WorkerPriority.IMMEDIATE,
+            drop_if_full=True,
+        )
+
+        scheduled = await self._schedule_slot_task(
+            slot_idx=slot_idx,
+            name="stop_test",
+            task=lambda: self._execute_stop_test(slot_idx),
+            priority=WorkerPriority.IMMEDIATE,
+            drop_if_full=True,
+        )
+
+        if not scheduled:
+            await self._queue_state_update(
+                slot_idx=slot_idx,
+                state_data={
+                    "status": "error",
+                    "error": "stop_test queue is full",
+                },
+                priority=WorkerPriority.HIGH,
+                drop_if_full=True,
+            )
+
+    async def _execute_stop_test(self, slot_idx: int) -> None:
+        """슬롯 워커에서 실행되는 테스트 중지 로직."""
+        if not self._mfc_controller or not self._slot_manager:
+            logger.warning("Controller or slot manager missing for stop")
+            return
+
         try:
             slot_machine = self._slot_manager[slot_idx]
         except KeyError:
-            logger.error("Invalid slot index", slot_idx=slot_idx)
+            logger.error("Invalid slot index during stop", slot_idx=slot_idx)
             return
 
-        # Check if slot can be stopped
         if not slot_machine.can_transition(SlotEvent.STOP):
             logger.warning(
                 "Cannot stop test in current state",
                 slot_idx=slot_idx,
                 current_state=slot_machine.state.value,
+            )
+            await self._queue_state_update(
+                slot_idx=slot_idx,
+                state_data={
+                    "status": "error",
+                    "error": "Cannot stop test in current state",
+                },
+                priority=WorkerPriority.HIGH,
             )
             return
 
@@ -1112,23 +1384,20 @@ class Agent:
             # State transition: STOP
             slot_machine.trigger(SlotEvent.STOP)
 
-            # Execute stop using MFC Controller
             success = await self._mfc_controller.stop_test(slot_idx)
 
             if success:
-                # State transition: STOPPED (if still in STOPPING state)
                 if slot_machine.can_transition(SlotEvent.STOPPED):
                     slot_machine.trigger(SlotEvent.STOPPED)
 
-                # Backend에 stopped 상태 전송
-                if self._ws_client:
-                    await self._ws_client.send_state_update(
-                        slot_idx=slot_idx,
-                        state_data={
-                            "status": "stopped",
-                            "message": "Test stopped by user",
-                        },
-                    )
+                await self._queue_state_update(
+                    slot_idx=slot_idx,
+                    state_data={
+                        "status": "stopped",
+                        "message": "Test stopped by user",
+                    },
+                    priority=WorkerPriority.IMMEDIATE,
+                )
             else:
                 if slot_machine.can_transition(SlotEvent.ERROR):
                     slot_machine.trigger(
@@ -1224,6 +1493,11 @@ class Agent:
         """
         logger.info("Cleaning up resources")
 
+        # 워커 풀 정지
+        if self._worker_pool:
+            await self._worker_pool.stop()
+            self._worker_pool = None
+
         # 메모리 모니터 중지
         if self._memory_monitor:
             await self._memory_monitor.stop()
@@ -1268,6 +1542,7 @@ class Agent:
 
         # 최종 GC 실행
         import gc
+
         gc.collect()
 
         logger.info("Cleanup completed")

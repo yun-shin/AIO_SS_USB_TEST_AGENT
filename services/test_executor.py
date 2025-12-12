@@ -135,9 +135,9 @@ class TestExecutor:
         self._running_tests: dict[int, str] = {}  # slot_idx -> test_id
 
         # 콜백
-        self._on_state_change: Optional[
-            Callable[[int, TestPhase], Awaitable[None]]
-        ] = None
+        self._on_state_change: Optional[Callable[[int, TestPhase], Awaitable[None]]] = (
+            None
+        )
 
     def set_state_change_callback(
         self,

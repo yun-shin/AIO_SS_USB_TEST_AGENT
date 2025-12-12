@@ -11,14 +11,17 @@ import sys
 import time
 from typing import Any
 
-# pywinauto 관련
+# pywinauto 관련 (없으면 테스트 스킵)
 try:
     from pywinauto import Application
     from pywinauto.controls.hwndwrapper import HwndWrapper
 except ImportError:
-    print("pywinauto가 설치되어 있지 않습니다.")
-    print("pip install pywinauto")
-    sys.exit(1)
+    import pytest
+
+    pytest.skip(
+        "pywinauto not installed; manual UI parsing test skipped",
+        allow_module_level=True,
+    )
 
 
 # 테스트할 Control ID들 (AIO_SS_USB_TEST_AGENT 방식)
@@ -43,9 +46,9 @@ CONTROL_IDS = {
 BEST_MATCH_NAMES = [
     "Button9",  # 3.0 버전 상태 텍스트
     "Button6",  # 2.0 버전 상태 텍스트
-    "Static",   # 테스트 단계 텍스트
-    "Edit4",    # 2.0 버전 루프
-    "Edit5",    # 3.0 버전 루프
+    "Static",  # 테스트 단계 텍스트
+    "Edit4",  # 2.0 버전 루프
+    "Edit5",  # 3.0 버전 루프
     "ComboBox2",
     "ComboBox3",
     "ComboBox4",
@@ -78,7 +81,9 @@ def find_usb_test_windows() -> list[tuple[Application, Any]]:
     return windows
 
 
-def read_control_by_id(dialog: Any, control_id: int, class_name: str | None = None) -> dict:
+def read_control_by_id(
+    dialog: Any, control_id: int, class_name: str | None = None
+) -> dict:
     """Control ID로 컨트롤을 읽습니다."""
     result = {
         "control_id": control_id,

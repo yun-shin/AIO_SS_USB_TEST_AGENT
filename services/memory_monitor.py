@@ -166,7 +166,7 @@ class MemoryMonitor:
         # Add to history (with size limit)
         self._stats_history.append(stats)
         if len(self._stats_history) > self._max_history_size:
-            self._stats_history = self._stats_history[-self._max_history_size:]
+            self._stats_history = self._stats_history[-self._max_history_size :]
 
         # Log stats periodically
         await self._maybe_log_stats(stats)
@@ -252,7 +252,7 @@ class MemoryMonitor:
             self._optimization_history.append(result)
             if len(self._optimization_history) > self._max_optimization_history:
                 self._optimization_history = self._optimization_history[
-                    -self._max_optimization_history:
+                    -self._max_optimization_history :
                 ]
 
             self._logger.info(
@@ -288,8 +288,18 @@ class MemoryMonitor:
         self._optimization_history.append(result)
         if len(self._optimization_history) > self._max_optimization_history:
             self._optimization_history = self._optimization_history[
-                -self._max_optimization_history:
+                -self._max_optimization_history :
             ]
+
+        # Call optimization complete callback
+        if self.on_optimization_complete:
+            try:
+                await self.on_optimization_complete(result)
+            except Exception as e:
+                self._logger.error(
+                    "Optimization callback failed",
+                    error=str(e),
+                )
 
         return result
 

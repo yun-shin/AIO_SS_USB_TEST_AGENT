@@ -71,23 +71,71 @@ class TestProcessMonitor:
     """Tests for ProcessMonitor."""
 
     def test_init(self, process_monitor: ProcessMonitor):
-        """Test initialization."""
+        """[TC-PROCESS_MONITOR-001] Init - 테스트 시나리오를 검증한다.
+
+            테스트 목적:
+                Init 시나리오에서 기대 동작이 유지되는지 확인한다.
+
+            테스트 시나리오:
+                Given: 테스트 코드에서 준비한 기본 상태
+                When: test_init 케이스를 실행하면
+                Then: 단언문에 명시된 기대 결과가 충족된다.
+
+            Notes:
+                None
+            """
         assert not process_monitor.is_running
         assert process_monitor.get_watched_slots() == {}
 
     def test_watch_slot(self, process_monitor: ProcessMonitor):
-        """Test watching a slot."""
+        """[TC-PROCESS_MONITOR-002] Watch slot - 테스트 시나리오를 검증한다.
+
+            테스트 목적:
+                Watch slot 시나리오에서 기대 동작이 유지되는지 확인한다.
+
+            테스트 시나리오:
+                Given: 테스트 코드에서 준비한 기본 상태
+                When: test_watch_slot 케이스를 실행하면
+                Then: 단언문에 명시된 기대 결과가 충족된다.
+
+            Notes:
+                None
+            """
         process_monitor.watch_slot(0, 1234, is_running=True)
         assert process_monitor.get_watched_slots() == {0: 1234}
 
     def test_unwatch_slot(self, process_monitor: ProcessMonitor):
-        """Test unwatching a slot."""
+        """[TC-PROCESS_MONITOR-003] Unwatch slot - 테스트 시나리오를 검증한다.
+
+            테스트 목적:
+                Unwatch slot 시나리오에서 기대 동작이 유지되는지 확인한다.
+
+            테스트 시나리오:
+                Given: 테스트 코드에서 준비한 기본 상태
+                When: test_unwatch_slot 케이스를 실행하면
+                Then: 단언문에 명시된 기대 결과가 충족된다.
+
+            Notes:
+                None
+            """
         process_monitor.watch_slot(0, 1234)
         process_monitor.unwatch_slot(0)
         assert process_monitor.get_watched_slots() == {}
 
     def test_update_slot_running_state(self, process_monitor: ProcessMonitor):
-        """Test updating slot running state."""
+        """[TC-PROCESS_MONITOR-004] Update slot running state - 테스트 시나리오를 검증한다.
+
+            테스트 목적:
+                Update slot running state 시나리오에서 기대 동작이 유지되는지 확인한다.
+
+            테스트 시나리오:
+                Given: 테스트 코드에서 준비한 기본 상태
+                When: test_update_slot_running_state 케이스를 실행하면
+                Then: 단언문에 명시된 기대 결과가 충족된다.
+
+            Notes:
+                None
+            """
         process_monitor.watch_slot(0, 1234, is_running=False)
         process_monitor.update_slot_running_state(0, True)
         # State is internal, but we can verify the slot is still watched
@@ -95,7 +143,19 @@ class TestProcessMonitor:
 
     @pytest.mark.asyncio
     async def test_start_stop(self, process_monitor: ProcessMonitor):
-        """Test start and stop."""
+        """[TC-PROCESS_MONITOR-005] Start stop - 테스트 시나리오를 검증한다.
+
+            테스트 목적:
+                Start stop 시나리오에서 기대 동작이 유지되는지 확인한다.
+
+            테스트 시나리오:
+                Given: 테스트 코드에서 준비한 기본 상태
+                When: test_start_stop 케이스를 실행하면
+                Then: 단언문에 명시된 기대 결과가 충족된다.
+
+            Notes:
+                None
+            """
         await process_monitor.start(interval=0.1)
         assert process_monitor.is_running
 
@@ -107,7 +167,19 @@ class TestProcessMonitor:
         self,
         process_monitor: ProcessMonitor,
     ):
-        """Test termination callback is called when process terminates."""
+        """[TC-PROCESS_MONITOR-006] Termination callback - 테스트 시나리오를 검증한다.
+
+            테스트 목적:
+                Termination callback 시나리오에서 기대 동작이 유지되는지 확인한다.
+
+            테스트 시나리오:
+                Given: 테스트 코드에서 준비한 기본 상태
+                When: test_termination_callback 케이스를 실행하면
+                Then: 단언문에 명시된 기대 결과가 충족된다.
+
+            Notes:
+                None
+            """
         callback = AsyncMock()
         process_monitor.set_termination_callback(callback)
 
@@ -129,7 +201,19 @@ class TestProcessMonitor:
         self,
         process_monitor: ProcessMonitor,
     ):
-        """Test zombie process is detected."""
+        """[TC-PROCESS_MONITOR-007] Zombie process detected - 테스트 시나리오를 검증한다.
+
+            테스트 목적:
+                Zombie process detected 시나리오에서 기대 동작이 유지되는지 확인한다.
+
+            테스트 시나리오:
+                Given: 테스트 코드에서 준비한 기본 상태
+                When: test_zombie_process_detected 케이스를 실행하면
+                Then: 단언문에 명시된 기대 결과가 충족된다.
+
+            Notes:
+                None
+            """
         callback = AsyncMock()
         process_monitor.set_termination_callback(callback)
 
@@ -152,7 +236,19 @@ class TestProcessMonitor:
         self,
         process_monitor: ProcessMonitor,
     ):
-        """Test slot is removed from watch list after termination."""
+        """[TC-PROCESS_MONITOR-008] Slot removed after termination - 테스트 시나리오를 검증한다.
+
+            테스트 목적:
+                Slot removed after termination 시나리오에서 기대 동작이 유지되는지 확인한다.
+
+            테스트 시나리오:
+                Given: 테스트 코드에서 준비한 기본 상태
+                When: test_slot_removed_after_termination 케이스를 실행하면
+                Then: 단언문에 명시된 기대 결과가 충족된다.
+
+            Notes:
+                None
+            """
         callback = AsyncMock()
         process_monitor.set_termination_callback(callback)
 
@@ -169,7 +265,19 @@ class TestProcessMonitor:
         self,
         process_monitor: ProcessMonitor,
     ):
-        """Test monitoring multiple slots."""
+        """[TC-PROCESS_MONITOR-009] Multiple slots monitoring - 테스트 시나리오를 검증한다.
+
+            테스트 목적:
+                Multiple slots monitoring 시나리오에서 기대 동작이 유지되는지 확인한다.
+
+            테스트 시나리오:
+                Given: 테스트 코드에서 준비한 기본 상태
+                When: test_multiple_slots_monitoring 케이스를 실행하면
+                Then: 단언문에 명시된 기대 결과가 충족된다.
+
+            Notes:
+                None
+            """
         callback = AsyncMock()
         process_monitor.set_termination_callback(callback)
 

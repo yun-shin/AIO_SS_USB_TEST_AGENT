@@ -94,7 +94,9 @@ def _launch_exe_get_pid(exe_path: str, timeout: float = 10.0) -> Optional[int]:
     logger.info("Launched executable, searching for new PID", exe_path=exe_path)
 
     # 새로 생성된 프로세스 PID 찾기
-    start_time = asyncio.get_event_loop().time() if asyncio.get_event_loop().is_running() else 0
+    start_time = (
+        asyncio.get_event_loop().time() if asyncio.get_event_loop().is_running() else 0
+    )
     poll_interval = 0.5
     elapsed = 0.0
 
@@ -121,6 +123,7 @@ def _launch_exe_get_pid(exe_path: str, timeout: float = 10.0) -> Optional[int]:
 
         # 동기적으로 대기 (asyncio가 아닌 환경에서도 동작)
         import time
+
         time.sleep(poll_interval)
         elapsed += poll_interval
 
@@ -252,8 +255,7 @@ class SlotProcessManager:
 
         # 슬롯별 프로세스 정보 초기화
         self._slots: dict[int, SlotProcess] = {
-            idx: SlotProcess(slot_idx=idx)
-            for idx in range(max_slots)
+            idx: SlotProcess(slot_idx=idx) for idx in range(max_slots)
         }
 
     @property

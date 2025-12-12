@@ -12,7 +12,7 @@ from datetime import datetime
 from typing import Any, Callable, Optional
 
 import websockets
-from websockets.client import WebSocketClientProtocol
+from websockets.asyncio.client import ClientConnection
 from websockets.exceptions import ConnectionClosed, WebSocketException
 
 from config.settings import AgentSettings, get_settings
@@ -51,7 +51,7 @@ class WebSocketClient:
             on_message: Callback function to call when message is received.
         """
         self._settings = settings or get_settings()
-        self._ws: Optional[WebSocketClientProtocol] = None
+        self._ws: Optional[ClientConnection] = None
         self._state = AgentState.DISCONNECTED
         self._reconnect_count = 0
         self._should_run = False

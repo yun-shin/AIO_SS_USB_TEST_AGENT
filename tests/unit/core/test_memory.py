@@ -27,7 +27,19 @@ class TestMemoryStats:
     """Tests for MemoryStats dataclass."""
 
     def test_to_dict(self):
-        """Test MemoryStats to_dict conversion."""
+        """[TC-MEMORY-001] To dict - 테스트 시나리오를 검증한다.
+
+            테스트 목적:
+                To dict 시나리오에서 기대 동작이 유지되는지 확인한다.
+
+            테스트 시나리오:
+                Given: 테스트 코드에서 준비한 기본 상태
+                When: test_to_dict 케이스를 실행하면
+                Then: 단언문에 명시된 기대 결과가 충족된다.
+
+            Notes:
+                None
+            """
         stats = MemoryStats(
             rss_mb=100.5,
             vms_mb=200.3,
@@ -53,7 +65,19 @@ class TestOptimizationResult:
     """Tests for OptimizationResult dataclass."""
 
     def test_to_dict(self):
-        """Test OptimizationResult to_dict conversion."""
+        """[TC-MEMORY-002] To dict - 테스트 시나리오를 검증한다.
+
+            테스트 목적:
+                To dict 시나리오에서 기대 동작이 유지되는지 확인한다.
+
+            테스트 시나리오:
+                Given: 테스트 코드에서 준비한 기본 상태
+                When: test_to_dict 케이스를 실행하면
+                Then: 단언문에 명시된 기대 결과가 충족된다.
+
+            Notes:
+                None
+            """
         result = OptimizationResult(
             before_mb=150.0,
             after_mb=100.0,
@@ -95,13 +119,37 @@ class TestMemoryManager:
         )
 
     def test_init(self, memory_manager):
-        """Test MemoryManager initialization."""
+        """[TC-MEMORY-003] Init - 테스트 시나리오를 검증한다.
+
+            테스트 목적:
+                Init 시나리오에서 기대 동작이 유지되는지 확인한다.
+
+            테스트 시나리오:
+                Given: 테스트 코드에서 준비한 기본 상태
+                When: test_init 케이스를 실행하면
+                Then: 단언문에 명시된 기대 결과가 충족된다.
+
+            Notes:
+                None
+            """
         assert memory_manager._last_gc_time is None
         assert memory_manager._optimization_count == 0
         assert memory_manager._total_freed_mb == 0.0
 
     def test_get_memory_usage(self, memory_manager):
-        """Test getting memory usage statistics."""
+        """[TC-MEMORY-004] Get memory usage - 테스트 시나리오를 검증한다.
+
+            테스트 목적:
+                Get memory usage 시나리오에서 기대 동작이 유지되는지 확인한다.
+
+            테스트 시나리오:
+                Given: 테스트 코드에서 준비한 기본 상태
+                When: test_get_memory_usage 케이스를 실행하면
+                Then: 단언문에 명시된 기대 결과가 충족된다.
+
+            Notes:
+                None
+            """
         stats = memory_manager.get_memory_usage()
 
         assert isinstance(stats, MemoryStats)
@@ -112,7 +160,19 @@ class TestMemoryManager:
 
     @pytest.mark.asyncio
     async def test_optimize_first_time(self, memory_manager):
-        """Test first optimization run."""
+        """[TC-MEMORY-005] Optimize first time - 테스트 시나리오를 검증한다.
+
+            테스트 목적:
+                Optimize first time 시나리오에서 기대 동작이 유지되는지 확인한다.
+
+            테스트 시나리오:
+                Given: 테스트 코드에서 준비한 기본 상태
+                When: test_optimize_first_time 케이스를 실행하면
+                Then: 단언문에 명시된 기대 결과가 충족된다.
+
+            Notes:
+                None
+            """
         result = await memory_manager.optimize()
 
         assert isinstance(result, OptimizationResult)
@@ -125,7 +185,19 @@ class TestMemoryManager:
     async def test_optimize_skip_if_interval_not_passed(
         self, memory_manager, fake_clock
     ):
-        """Test that optimization is skipped if interval hasn't passed."""
+        """[TC-MEMORY-006] Optimize skip if interval not passed - 테스트 시나리오를 검증한다.
+
+            테스트 목적:
+                Optimize skip if interval not passed 시나리오에서 기대 동작이 유지되는지 확인한다.
+
+            테스트 시나리오:
+                Given: 테스트 코드에서 준비한 기본 상태
+                When: test_optimize_skip_if_interval_not_passed 케이스를 실행하면
+                Then: 단언문에 명시된 기대 결과가 충족된다.
+
+            Notes:
+                None
+            """
         # First optimization
         await memory_manager.optimize()
 
@@ -141,7 +213,19 @@ class TestMemoryManager:
 
     @pytest.mark.asyncio
     async def test_optimize_force(self, memory_manager, fake_clock):
-        """Test forced optimization regardless of interval."""
+        """[TC-MEMORY-007] Optimize force - 테스트 시나리오를 검증한다.
+
+            테스트 목적:
+                Optimize force 시나리오에서 기대 동작이 유지되는지 확인한다.
+
+            테스트 시나리오:
+                Given: 테스트 코드에서 준비한 기본 상태
+                When: test_optimize_force 케이스를 실행하면
+                Then: 단언문에 명시된 기대 결과가 충족된다.
+
+            Notes:
+                None
+            """
         # First optimization
         await memory_manager.optimize()
 
@@ -152,7 +236,19 @@ class TestMemoryManager:
 
     @pytest.mark.asyncio
     async def test_optimize_runs_after_interval(self, memory_manager, fake_clock):
-        """Test optimization runs after interval has passed."""
+        """[TC-MEMORY-008] Optimize runs after interval - 테스트 시나리오를 검증한다.
+
+            테스트 목적:
+                Optimize runs after interval 시나리오에서 기대 동작이 유지되는지 확인한다.
+
+            테스트 시나리오:
+                Given: 테스트 코드에서 준비한 기본 상태
+                When: test_optimize_runs_after_interval 케이스를 실행하면
+                Then: 단언문에 명시된 기대 결과가 충족된다.
+
+            Notes:
+                None
+            """
         # First optimization
         await memory_manager.optimize()
 
@@ -165,14 +261,38 @@ class TestMemoryManager:
         assert memory_manager._optimization_count == 2
 
     def test_register_cleanup_callback(self, memory_manager):
-        """Test registering cleanup callbacks."""
+        """[TC-MEMORY-009] Register cleanup callback - 테스트 시나리오를 검증한다.
+
+            테스트 목적:
+                Register cleanup callback 시나리오에서 기대 동작이 유지되는지 확인한다.
+
+            테스트 시나리오:
+                Given: 테스트 코드에서 준비한 기본 상태
+                When: test_register_cleanup_callback 케이스를 실행하면
+                Then: 단언문에 명시된 기대 결과가 충족된다.
+
+            Notes:
+                None
+            """
         callback = MagicMock()
         memory_manager.register_cleanup_callback(callback, "test_cleanup")
 
         assert "test_cleanup" in memory_manager._cleanup_callbacks
 
     def test_unregister_cleanup_callback(self, memory_manager):
-        """Test unregistering cleanup callbacks."""
+        """[TC-MEMORY-010] Unregister cleanup callback - 테스트 시나리오를 검증한다.
+
+            테스트 목적:
+                Unregister cleanup callback 시나리오에서 기대 동작이 유지되는지 확인한다.
+
+            테스트 시나리오:
+                Given: 테스트 코드에서 준비한 기본 상태
+                When: test_unregister_cleanup_callback 케이스를 실행하면
+                Then: 단언문에 명시된 기대 결과가 충족된다.
+
+            Notes:
+                None
+            """
         callback = MagicMock()
         memory_manager.register_cleanup_callback(callback, "test_cleanup")
         memory_manager.unregister_cleanup_callback("test_cleanup")
@@ -181,7 +301,19 @@ class TestMemoryManager:
 
     @pytest.mark.asyncio
     async def test_cleanup_callbacks_executed(self, memory_manager, fake_clock):
-        """Test that cleanup callbacks are executed during optimization."""
+        """[TC-MEMORY-011] Cleanup callbacks executed - 테스트 시나리오를 검증한다.
+
+            테스트 목적:
+                Cleanup callbacks executed 시나리오에서 기대 동작이 유지되는지 확인한다.
+
+            테스트 시나리오:
+                Given: 테스트 코드에서 준비한 기본 상태
+                When: test_cleanup_callbacks_executed 케이스를 실행하면
+                Then: 단언문에 명시된 기대 결과가 충족된다.
+
+            Notes:
+                None
+            """
         callback1 = MagicMock()
         callback2 = MagicMock()
 
@@ -196,7 +328,19 @@ class TestMemoryManager:
 
     @pytest.mark.asyncio
     async def test_failed_callback_removed(self, memory_manager, fake_clock):
-        """Test that failed callbacks are removed."""
+        """[TC-MEMORY-012] Failed callback removed - 테스트 시나리오를 검증한다.
+
+            테스트 목적:
+                Failed callback removed 시나리오에서 기대 동작이 유지되는지 확인한다.
+
+            테스트 시나리오:
+                Given: 테스트 코드에서 준비한 기본 상태
+                When: test_failed_callback_removed 케이스를 실행하면
+                Then: 단언문에 명시된 기대 결과가 충족된다.
+
+            Notes:
+                None
+            """
         def failing_callback():
             raise RuntimeError("Callback failed")
 
@@ -208,7 +352,19 @@ class TestMemoryManager:
         assert "failing" not in memory_manager._cleanup_callbacks
 
     def test_should_optimize_no_previous(self, memory_manager):
-        """Test should_optimize returns False when no previous optimization."""
+        """[TC-MEMORY-013] Should optimize no previous - 테스트 시나리오를 검증한다.
+
+            테스트 목적:
+                Should optimize no previous 시나리오에서 기대 동작이 유지되는지 확인한다.
+
+            테스트 시나리오:
+                Given: 테스트 코드에서 준비한 기본 상태
+                When: test_should_optimize_no_previous 케이스를 실행하면
+                Then: 단언문에 명시된 기대 결과가 충족된다.
+
+            Notes:
+                None
+            """
         # No threshold exceeded, no previous GC
         result = memory_manager.should_optimize()
         # With small memory usage and no previous GC, should still return False
@@ -216,7 +372,19 @@ class TestMemoryManager:
         assert isinstance(result, bool)
 
     def test_should_optimize_interval_passed(self, memory_manager, fake_clock):
-        """Test should_optimize returns True when interval passed."""
+        """[TC-MEMORY-014] Should optimize interval passed - 테스트 시나리오를 검증한다.
+
+            테스트 목적:
+                Should optimize interval passed 시나리오에서 기대 동작이 유지되는지 확인한다.
+
+            테스트 시나리오:
+                Given: 테스트 코드에서 준비한 기본 상태
+                When: test_should_optimize_interval_passed 케이스를 실행하면
+                Then: 단언문에 명시된 기대 결과가 충족된다.
+
+            Notes:
+                None
+            """
         memory_manager._last_gc_time = fake_clock.now()
         fake_clock.advance(301.0)  # Past default interval
 
@@ -224,14 +392,38 @@ class TestMemoryManager:
         assert memory_manager.should_optimize() is True
 
     def test_is_memory_critical(self, memory_manager):
-        """Test is_memory_critical detection."""
+        """[TC-MEMORY-015] Is memory critical - 테스트 시나리오를 검증한다.
+
+            테스트 목적:
+                Is memory critical 시나리오에서 기대 동작이 유지되는지 확인한다.
+
+            테스트 시나리오:
+                Given: 테스트 코드에서 준비한 기본 상태
+                When: test_is_memory_critical 케이스를 실행하면
+                Then: 단언문에 명시된 기대 결과가 충족된다.
+
+            Notes:
+                None
+            """
         # With normal memory usage, should not be critical
         result = memory_manager.is_memory_critical()
         # This depends on actual system memory
         assert isinstance(result, bool)
 
     def test_get_statistics(self, memory_manager):
-        """Test getting statistics summary."""
+        """[TC-MEMORY-016] Get statistics - 테스트 시나리오를 검증한다.
+
+            테스트 목적:
+                Get statistics 시나리오에서 기대 동작이 유지되는지 확인한다.
+
+            테스트 시나리오:
+                Given: 테스트 코드에서 준비한 기본 상태
+                When: test_get_statistics 케이스를 실행하면
+                Then: 단언문에 명시된 기대 결과가 충족된다.
+
+            Notes:
+                None
+            """
         stats = memory_manager.get_statistics()
 
         assert "current_memory" in stats
@@ -245,12 +437,36 @@ class TestFakeMemoryManager:
     """Tests for FakeMemoryManager."""
 
     def test_init(self):
-        """Test FakeMemoryManager initialization."""
+        """[TC-MEMORY-017] Init - 테스트 시나리오를 검증한다.
+
+            테스트 목적:
+                Init 시나리오에서 기대 동작이 유지되는지 확인한다.
+
+            테스트 시나리오:
+                Given: 테스트 코드에서 준비한 기본 상태
+                When: test_init 케이스를 실행하면
+                Then: 단언문에 명시된 기대 결과가 충족된다.
+
+            Notes:
+                None
+            """
         manager = FakeMemoryManager(initial_memory_mb=150.0)
         assert manager._memory_mb == 150.0
 
     def test_get_memory_usage(self):
-        """Test getting simulated memory usage."""
+        """[TC-MEMORY-018] Get memory usage - 테스트 시나리오를 검증한다.
+
+            테스트 목적:
+                Get memory usage 시나리오에서 기대 동작이 유지되는지 확인한다.
+
+            테스트 시나리오:
+                Given: 테스트 코드에서 준비한 기본 상태
+                When: test_get_memory_usage 케이스를 실행하면
+                Then: 단언문에 명시된 기대 결과가 충족된다.
+
+            Notes:
+                None
+            """
         manager = FakeMemoryManager(initial_memory_mb=100.0)
         stats = manager.get_memory_usage()
 
@@ -260,7 +476,19 @@ class TestFakeMemoryManager:
 
     @pytest.mark.asyncio
     async def test_optimize(self):
-        """Test simulated optimization."""
+        """[TC-MEMORY-019] Optimize - 테스트 시나리오를 검증한다.
+
+            테스트 목적:
+                Optimize 시나리오에서 기대 동작이 유지되는지 확인한다.
+
+            테스트 시나리오:
+                Given: 테스트 코드에서 준비한 기본 상태
+                When: test_optimize 케이스를 실행하면
+                Then: 단언문에 명시된 기대 결과가 충족된다.
+
+            Notes:
+                None
+            """
         manager = FakeMemoryManager(initial_memory_mb=100.0)
 
         result = await manager.optimize()
@@ -272,7 +500,19 @@ class TestFakeMemoryManager:
 
     @pytest.mark.asyncio
     async def test_optimize_force(self):
-        """Test forced optimization tracking."""
+        """[TC-MEMORY-020] Optimize force - 테스트 시나리오를 검증한다.
+
+            테스트 목적:
+                Optimize force 시나리오에서 기대 동작이 유지되는지 확인한다.
+
+            테스트 시나리오:
+                Given: 테스트 코드에서 준비한 기본 상태
+                When: test_optimize_force 케이스를 실행하면
+                Then: 단언문에 명시된 기대 결과가 충족된다.
+
+            Notes:
+                None
+            """
         manager = FakeMemoryManager(initial_memory_mb=100.0)
 
         await manager.optimize(force=True)
@@ -281,7 +521,19 @@ class TestFakeMemoryManager:
         assert manager._optimize_calls == [True, False]
 
     def test_register_cleanup_callback(self):
-        """Test registering cleanup callbacks."""
+        """[TC-MEMORY-021] Register cleanup callback - 테스트 시나리오를 검증한다.
+
+            테스트 목적:
+                Register cleanup callback 시나리오에서 기대 동작이 유지되는지 확인한다.
+
+            테스트 시나리오:
+                Given: 테스트 코드에서 준비한 기본 상태
+                When: test_register_cleanup_callback 케이스를 실행하면
+                Then: 단언문에 명시된 기대 결과가 충족된다.
+
+            Notes:
+                None
+            """
         manager = FakeMemoryManager()
         callback = MagicMock()
 
@@ -290,7 +542,19 @@ class TestFakeMemoryManager:
         assert "test" in manager._cleanup_callbacks
 
     def test_set_memory_mb(self):
-        """Test setting simulated memory."""
+        """[TC-MEMORY-022] Set memory mb - 테스트 시나리오를 검증한다.
+
+            테스트 목적:
+                Set memory mb 시나리오에서 기대 동작이 유지되는지 확인한다.
+
+            테스트 시나리오:
+                Given: 테스트 코드에서 준비한 기본 상태
+                When: test_set_memory_mb 케이스를 실행하면
+                Then: 단언문에 명시된 기대 결과가 충족된다.
+
+            Notes:
+                None
+            """
         manager = FakeMemoryManager(initial_memory_mb=100.0)
         manager.set_memory_mb(250.0)
 

@@ -103,7 +103,9 @@ def build_pyinstaller() -> bool:
     DIST_DIR.mkdir(exist_ok=True)
 
     cmd = [
-        sys.executable, "-m", "PyInstaller",
+        sys.executable,
+        "-m",
+        "PyInstaller",
         "--clean",
         "--noconfirm",
         str(SPEC_FILE),
@@ -126,32 +128,29 @@ def build_nuitka() -> bool:
     print("Also need: C compiler (MSVC or MinGW)")
 
     cmd = [
-        sys.executable, "-m", "nuitka",
+        sys.executable,
+        "-m",
+        "nuitka",
         "--standalone",
         "--onefile",  # 단일 파일 (선택)
         "--windows-console-mode=attach",  # 콘솔 창 표시
         "--enable-plugin=anti-bloat",  # 불필요한 import 제거
         f"--output-dir={DIST_DIR}",
         f"--output-filename={APP_NAME}.exe",
-
         # Windows 정보
         f"--windows-product-name={APP_NAME}",
         f"--windows-product-version={VERSION}",
         "--windows-company-name=Samsung Electronics",
-
         # 아이콘 (있으면)
         # f"--windows-icon-from-ico={BUILD_DIR / 'assets' / 'icon.ico'}",
-
         # 포함할 패키지
         "--include-package=pywinauto",
         "--include-package=pydantic",
         # structlog removed - using standard logging
-
         # 제외할 패키지
         "--nofollow-import-to=pytest",
         "--nofollow-import-to=mypy",
         "--nofollow-import-to=ruff",
-
         str(PROJECT_ROOT / "run_agent.py"),
     ]
 
@@ -193,25 +192,19 @@ def build_installer() -> bool:
 def main() -> int:
     """메인 함수."""
     parser = argparse.ArgumentParser(description="Build SS USB Test Agent")
-    parser.add_argument(
-        "--clean",
-        action="store_true",
-        help="Clean build artifacts"
-    )
+    parser.add_argument("--clean", action="store_true", help="Clean build artifacts")
     parser.add_argument(
         "--no-installer",
         action="store_true",
-        help="Skip installer build (PyInstaller only)"
+        help="Skip installer build (PyInstaller only)",
     )
     parser.add_argument(
         "--installer-only",
         action="store_true",
-        help="Build installer only (skip PyInstaller)"
+        help="Build installer only (skip PyInstaller)",
     )
     parser.add_argument(
-        "--nuitka",
-        action="store_true",
-        help="Use Nuitka instead of PyInstaller"
+        "--nuitka", action="store_true", help="Use Nuitka instead of PyInstaller"
     )
 
     args = parser.parse_args()

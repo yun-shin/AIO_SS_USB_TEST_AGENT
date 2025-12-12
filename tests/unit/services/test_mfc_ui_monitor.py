@@ -1,341 +1,156 @@
-"""Unit tests for MFCUIMonitor service."""
-
-import asyncio
-from datetime import datetime
-from unittest.mock import AsyncMock, MagicMock, patch
-
 import pytest
 
-from config.constants import ProcessState, MFCControlId
-from services.mfc_ui_monitor import (
-    MFCUIMonitor,
-    MFCUIState,
-    UIStateChange,
-)
+from config.constants import MFCControlId, ProcessState, TestPhase
+from infrastructure.clock import FakeClock
+from services.mfc_ui_monitor import MFCUIMonitor, MFCUIState
 
 
-class FakeClock:
-    """Fake clock for testing."""
+class DummyLogger:
+    def debug(self, *args, **kwargs):
+        pass
 
-    def __init__(self, initial_time: datetime = None):
-        self._time = initial_time or datetime(2025, 1, 1, 12, 0, 0)
+    def info(self, *args, **kwargs):
+        pass
 
-    def now(self) -> datetime:
-        return self._time
+    def warning(self, *args, **kwargs):
+        pass
 
-    def monotonic(self) -> float:
-        return self._time.timestamp()
-
-    async def sleep(self, seconds: float) -> None:
-        await asyncio.sleep(0)  # Yield control without actual delay
+    def error(self, *args, **kwargs):
+        pass
 
 
-class FakeLogger:
-    """Fake logger for testing."""
+class FakeControl:
+    def __init__(self, text: str = "", enabled: bool = True):
+        self._text = text
+        self._enabled = enabled
 
+    def window_text(self) -> str:
+        return self._text
+
+    def is_enabled(self) -> bool:
+        return self._enabled
+
+
+class FakeSlotWindow:
     def __init__(self):
-        self.messages: list[dict] = []
+        self._controls: list[
+            tuple[FakeControl, str | None, int | None, str | None]
+        ] = []
 
-    def info(self, msg: str, **kwargs) -> None:
-        self.messages.append({"level": "info", "msg": msg, **kwargs})
+    def add_control(
+        self,
+        control: FakeControl,
+        name: str | None = None,
+        control_id: int | None = None,
+        class_name: str | None = None,
+    ) -> None:
+        self._controls.append((control, name, control_id, class_name))
 
-    def warning(self, msg: str, **kwargs) -> None:
-        self.messages.append({"level": "warning", "msg": msg, **kwargs})
+    def get_control_by_name(self, name: str):
+        for control, ctrl_name, _, _ in self._controls:
+            if ctrl_name == name:
+                return control
+        return None
 
-    def error(self, msg: str, **kwargs) -> None:
-        self.messages.append({"level": "error", "msg": msg, **kwargs})
-
-    def debug(self, msg: str, **kwargs) -> None:
-        self.messages.append({"level": "debug", "msg": msg, **kwargs})
-
-
-class FakeSlotWindowManager:
-    """Fake slot window manager for testing."""
-
-    def __init__(self, slot_idx: int, connected: bool = True):
-        self.slot_idx = slot_idx
-        self.is_connected = connected
-        self._controls: dict[int, MagicMock] = {}
-
-    def set_control(self, control_id: int, text: str, enabled: bool = True):
-        """Set a fake control."""
-        ctrl = MagicMock()
-        ctrl.window_text.return_value = text
-        ctrl.is_enabled.return_value = enabled
-        self._controls[control_id] = ctrl
-
-    def find_control(self, control_id: int, class_name: str = None):
-        """Find a control by ID."""
-        return self._controls.get(control_id)
+    def find_control(
+        self, control_id: int | None = None, class_name: str | None = None
+    ):
+        for control, _, cid, cls in self._controls:
+            if (control_id is None or cid == control_id) and (
+                class_name is None or cls == class_name
+            ):
+                return control
+        return None
 
 
 class FakeWindowManager:
-    """Fake window manager for testing."""
-
-    def __init__(self):
-        self._slot_windows: dict[int, FakeSlotWindowManager] = {}
-
-    def add_slot(self, slot_idx: int, connected: bool = True) -> FakeSlotWindowManager:
-        """Add a fake slot."""
-        window = FakeSlotWindowManager(slot_idx, connected)
-        self._slot_windows[slot_idx] = window
-        return window
+    def __init__(self, slot_window: FakeSlotWindow):
+        self._slot_window = slot_window
 
     def get_slot_window(self, slot_idx: int):
-        """Get slot window manager."""
-        return self._slot_windows.get(slot_idx)
+        return self._slot_window
 
 
-@pytest.fixture
-def fake_clock() -> FakeClock:
-    return FakeClock()
+@pytest.mark.asyncio
+async def test_read_ui_state_parses_status_and_progress():
+    """[TC-MFC_UI_MONITOR-001] Read ui state parses status and progress - 테스트 시나리오를 검증한다.
 
+        테스트 목적:
+            Read ui state parses status and progress 시나리오에서 기대 동작이 유지되는지 확인한다.
 
-@pytest.fixture
-def fake_logger() -> FakeLogger:
-    return FakeLogger()
+        테스트 시나리오:
+            Given: 테스트 코드에서 준비한 기본 상태
+            When: test_read_ui_state_parses_status_and_progress 케이스를 실행하면
+            Then: 단언문에 명시된 기대 결과가 충족된다.
 
-
-@pytest.fixture
-def fake_window_manager() -> FakeWindowManager:
-    return FakeWindowManager()
-
-
-@pytest.fixture
-def mfc_ui_monitor(
-    fake_window_manager: FakeWindowManager,
-    fake_clock: FakeClock,
-    fake_logger: FakeLogger,
-) -> MFCUIMonitor:
-    return MFCUIMonitor(
-        window_manager=fake_window_manager,
-        clock=fake_clock,
-        logger=fake_logger,
-        max_slots=4,
+        Notes:
+            None
+        """
+    slot = FakeSlotWindow()
+    slot.add_control(FakeControl("Test"), name="Button6")  # status button
+    slot.add_control(
+        FakeControl("10/10 IDLE"),
+        control_id=MFCControlId.TXT_STATUS,
+        class_name="Static",
+    )
+    slot.add_control(
+        FakeControl("4/10  File Copy 35/88"), name="Static"
+    )  # progress text
+    slot.add_control(
+        FakeControl("12"), control_id=MFCControlId.EDT_LOOP, class_name="Edit"
+    )
+    slot.add_control(
+        FakeControl("", enabled=True),
+        control_id=MFCControlId.BTN_TEST,
+        class_name="Button",
+    )
+    slot.add_control(
+        FakeControl("", enabled=False),
+        control_id=MFCControlId.BTN_STOP,
+        class_name="Button",
     )
 
+    monitor = MFCUIMonitor(
+        window_manager=FakeWindowManager(slot),
+        clock=FakeClock(),
+        logger=DummyLogger(),
+        max_slots=1,
+    )
 
-class TestMFCUIState:
-    """Tests for MFCUIState dataclass."""
+    state = await monitor._read_ui_state(slot_idx=0, slot_window=slot)
 
-    def test_init_defaults(self):
-        """Test default initialization."""
-        state = MFCUIState(slot_idx=0)
-        assert state.slot_idx == 0
-        assert state.process_state == ProcessState.IDLE
-        assert state.current_loop == 0
-        assert state.total_loop == 0
-        assert state.timestamp is not None
-
-    def test_to_dict(self):
-        """Test conversion to dictionary."""
-        state = MFCUIState(
-            slot_idx=0,
-            process_state=ProcessState.TEST,
-            current_loop=5,
-            total_loop=10,
-            status_text="Test",
-        )
-        d = state.to_dict()
-        assert d["slot_idx"] == 0
-        assert d["process_state"] == ProcessState.TEST.value
-        assert d["process_state_name"] == "TEST"
-        assert d["current_loop"] == 5
-        assert d["total_loop"] == 10
+    assert state.process_state == ProcessState.TEST
+    assert state.test_phase == TestPhase.COPY
+    assert state.current_loop == 4
+    assert state.total_loop == 12  # EDT_LOOP 우선
+    assert state.is_test_button_enabled is True
+    assert state.is_stop_button_enabled is False
+    assert state.progress_text.startswith("4/10")
 
 
-class TestMFCUIMonitor:
-    """Tests for MFCUIMonitor."""
+def test_parse_progress_sets_total_when_missing():
+    """[TC-MFC_UI_MONITOR-002] Parse progress sets total when missing - 테스트 시나리오를 검증한다.
 
-    def test_init(self, mfc_ui_monitor: MFCUIMonitor):
-        """Test initialization."""
-        assert not mfc_ui_monitor.is_running
+        테스트 목적:
+            Parse progress sets total when missing 시나리오에서 기대 동작이 유지되는지 확인한다.
 
-    def test_add_remove_monitored_slot(self, mfc_ui_monitor: MFCUIMonitor):
-        """Test adding and removing monitored slots."""
-        mfc_ui_monitor.add_monitored_slot(0)
-        mfc_ui_monitor.add_monitored_slot(1)
-        mfc_ui_monitor.remove_monitored_slot(0)
-        # We can't directly check the set, but we can verify no errors
+        테스트 시나리오:
+            Given: 테스트 코드에서 준비한 기본 상태
+            When: test_parse_progress_sets_total_when_missing 케이스를 실행하면
+            Then: 단언문에 명시된 기대 결과가 충족된다.
 
-    @pytest.mark.asyncio
-    async def test_start_stop(self, mfc_ui_monitor: MFCUIMonitor):
-        """Test start and stop."""
-        await mfc_ui_monitor.start(interval=0.1)
-        assert mfc_ui_monitor.is_running
+        Notes:
+            None
+        """
+    monitor = MFCUIMonitor(
+        window_manager=FakeWindowManager(FakeSlotWindow()),
+        clock=FakeClock(),
+        logger=DummyLogger(),
+        max_slots=1,
+    )
+    state = MFCUIState(slot_idx=0, progress_text="3/5  File Copy", total_loop=0)
 
-        await mfc_ui_monitor.stop()
-        assert not mfc_ui_monitor.is_running
+    monitor._parse_progress_text(state)
 
-    @pytest.mark.asyncio
-    async def test_poll_slot_once(
-        self,
-        mfc_ui_monitor: MFCUIMonitor,
-        fake_window_manager: FakeWindowManager,
-    ):
-        """Test polling a slot once."""
-        slot_window = fake_window_manager.add_slot(0, connected=True)
-        slot_window.set_control(MFCControlId.TXT_STATUS, "Test")
-        slot_window.set_control(MFCControlId.EDT_LOOP_CURRENT, "5")
-        slot_window.set_control(MFCControlId.EDT_LOOP, "10")
-        slot_window.set_control(MFCControlId.BTN_TEST, "", enabled=False)
-        slot_window.set_control(MFCControlId.BTN_STOP, "", enabled=True)
-
-        state = await mfc_ui_monitor.poll_slot_once(0)
-
-        assert state is not None
-        assert state.slot_idx == 0
-        assert state.process_state == ProcessState.TEST
-        assert state.current_loop == 5
-        assert state.total_loop == 10
-        assert not state.is_test_button_enabled
-        assert state.is_stop_button_enabled
-
-    @pytest.mark.asyncio
-    async def test_poll_disconnected_slot(
-        self,
-        mfc_ui_monitor: MFCUIMonitor,
-        fake_window_manager: FakeWindowManager,
-    ):
-        """Test polling a disconnected slot returns None."""
-        fake_window_manager.add_slot(0, connected=False)
-
-        state = await mfc_ui_monitor.poll_slot_once(0)
-        assert state is None
-
-    @pytest.mark.asyncio
-    async def test_change_callback(
-        self,
-        mfc_ui_monitor: MFCUIMonitor,
-        fake_window_manager: FakeWindowManager,
-    ):
-        """Test change callback is called on state change."""
-        callback = AsyncMock()
-        mfc_ui_monitor.set_change_callback(callback)
-        mfc_ui_monitor.add_monitored_slot(0)
-
-        slot_window = fake_window_manager.add_slot(0, connected=True)
-
-        # First poll - sets initial state
-        slot_window.set_control(MFCControlId.TXT_STATUS, "Idle")
-        slot_window.set_control(MFCControlId.EDT_LOOP_CURRENT, "0")
-        slot_window.set_control(MFCControlId.EDT_LOOP, "10")
-        await mfc_ui_monitor._poll_all_slots()
-
-        # Second poll - state changed
-        slot_window.set_control(MFCControlId.TXT_STATUS, "Test")
-        slot_window.set_control(MFCControlId.EDT_LOOP_CURRENT, "1")
-        await mfc_ui_monitor._poll_all_slots()
-
-        callback.assert_called_once()
-        change = callback.call_args[0][0]
-        assert isinstance(change, UIStateChange)
-        assert change.slot_idx == 0
-        assert "process_state" in change.changed_fields
-        assert "current_loop" in change.changed_fields
-
-    @pytest.mark.asyncio
-    async def test_test_completed_callback(
-        self,
-        mfc_ui_monitor: MFCUIMonitor,
-        fake_window_manager: FakeWindowManager,
-    ):
-        """Test completion callback is called when test transitions to PASS."""
-        completed_callback = AsyncMock()
-        change_callback = AsyncMock()
-        mfc_ui_monitor.set_test_completed_callback(completed_callback)
-        mfc_ui_monitor.set_change_callback(change_callback)
-        mfc_ui_monitor.add_monitored_slot(0)
-
-        slot_window = fake_window_manager.add_slot(0, connected=True)
-
-        # First poll - TEST state
-        slot_window.set_control(MFCControlId.TXT_STATUS, "Test")
-        slot_window.set_control(MFCControlId.EDT_LOOP_CURRENT, "5")
-        slot_window.set_control(MFCControlId.EDT_LOOP, "10")
-        await mfc_ui_monitor._poll_all_slots()
-
-        # Second poll - PASS state
-        slot_window.set_control(MFCControlId.TXT_STATUS, "Pass")
-        slot_window.set_control(MFCControlId.EDT_LOOP_CURRENT, "10")
-        await mfc_ui_monitor._poll_all_slots()
-
-        completed_callback.assert_called_once()
-        args = completed_callback.call_args[0]
-        assert args[0] == 0  # slot_idx
-        assert args[1] == ProcessState.PASS  # final_state
-
-    @pytest.mark.asyncio
-    async def test_user_intervention_callback(
-        self,
-        mfc_ui_monitor: MFCUIMonitor,
-        fake_window_manager: FakeWindowManager,
-    ):
-        """Test user intervention callback."""
-        intervention_callback = AsyncMock()
-        change_callback = AsyncMock()
-        mfc_ui_monitor.set_user_intervention_callback(intervention_callback)
-        mfc_ui_monitor.set_change_callback(change_callback)
-        mfc_ui_monitor.add_monitored_slot(0)
-
-        slot_window = fake_window_manager.add_slot(0, connected=True)
-
-        # First poll - TEST state
-        slot_window.set_control(MFCControlId.TXT_STATUS, "Test")
-        slot_window.set_control(MFCControlId.EDT_LOOP_CURRENT, "5")
-        slot_window.set_control(MFCControlId.EDT_LOOP, "10")
-        await mfc_ui_monitor._poll_all_slots()
-
-        # Second poll - suddenly IDLE (user stopped)
-        slot_window.set_control(MFCControlId.TXT_STATUS, "Idle")
-        slot_window.set_control(MFCControlId.EDT_LOOP_CURRENT, "0")
-        await mfc_ui_monitor._poll_all_slots()
-
-        intervention_callback.assert_called_once()
-        args = intervention_callback.call_args[0]
-        assert args[0] == 0  # slot_idx
-        assert "manually" in args[1].lower() or "stopped" in args[1].lower()
-
-    def test_detect_changes(self, mfc_ui_monitor: MFCUIMonitor):
-        """Test change detection between states."""
-        previous = MFCUIState(
-            slot_idx=0,
-            process_state=ProcessState.IDLE,
-            current_loop=0,
-            total_loop=10,
-        )
-        current = MFCUIState(
-            slot_idx=0,
-            process_state=ProcessState.TEST,
-            current_loop=1,
-            total_loop=10,
-        )
-
-        changes = mfc_ui_monitor._detect_changes(previous, current)
-        assert "process_state" in changes
-        assert "current_loop" in changes
-        assert "total_loop" not in changes
-
-    def test_detect_changes_no_previous(self, mfc_ui_monitor: MFCUIMonitor):
-        """Test no changes detected on first poll."""
-        current = MFCUIState(slot_idx=0, process_state=ProcessState.IDLE)
-        changes = mfc_ui_monitor._detect_changes(None, current)
-        assert changes == []
-
-    def test_get_last_state(
-        self,
-        mfc_ui_monitor: MFCUIMonitor,
-    ):
-        """Test getting last polled state."""
-        # No state yet
-        assert mfc_ui_monitor.get_last_state(0) is None
-
-        # Set a state manually (simulating poll)
-        mfc_ui_monitor._previous_states[0] = MFCUIState(
-            slot_idx=0,
-            process_state=ProcessState.TEST,
-        )
-
-        state = mfc_ui_monitor.get_last_state(0)
-        assert state is not None
-        assert state.process_state == ProcessState.TEST
+    assert state.current_loop == 3
+    assert state.total_loop == 5

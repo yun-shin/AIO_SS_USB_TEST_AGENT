@@ -4,11 +4,20 @@ Pywinauto-based implementation of the IWindowFinder protocol.
 """
 
 import asyncio
+import warnings
 from typing import Any, Optional
 
-from pywinauto import Application
-from pywinauto.findwindows import ElementNotFoundError
-from pywinauto.controls.uiawrapper import UIAWrapper
+try:  # pragma: no cover - optional dependency
+    from pywinauto import Application
+    from pywinauto.findwindows import ElementNotFoundError
+    from pywinauto.controls.uiawrapper import UIAWrapper
+except ImportError:  # pragma: no cover - allow tests without pywinauto
+    Application = None
+    UIAWrapper = Any  # type: ignore
+
+    class ElementNotFoundError(Exception):
+        """Fallback when pywinauto is not installed."""
+
 
 from core.protocols import (
     IWindowFinder,
@@ -22,6 +31,15 @@ from core.exceptions import (
     ControlNotFoundError,
 )
 
+_PYWINAUTO_32BIT_WARNING_REGEX = (
+    r"32-bit application should be automated using 32-bit Python.*"
+)
+warnings.filterwarnings(
+    "ignore",
+    message=_PYWINAUTO_32BIT_WARNING_REGEX,
+    category=UserWarning,
+    module=r"pywinauto\.application",
+)
 
 class PywinautoControlHandle(IControlHandle):
     """Pywinauto control handle.
@@ -238,6 +256,7 @@ class PywinautoWindowFinder(IWindowFinder):
             backend: pywinauto backend ("uia" or "win32").
         """
         self._backend = backend
+        self._available = Application is not None
 
     async def find_window(
         self,
@@ -253,6 +272,9 @@ class PywinautoWindowFinder(IWindowFinder):
         Returns:
             Window handle or None.
         """
+        if not self._available:
+            return None
+
         start_time = asyncio.get_event_loop().time()
 
         while asyncio.get_event_loop().time() - start_time < timeout:
@@ -287,6 +309,9 @@ class PywinautoWindowFinder(IWindowFinder):
         Returns:
             Process handle or None.
         """
+        if not self._available:
+            return None
+
         start_time = asyncio.get_event_loop().time()
 
         while asyncio.get_event_loop().time() - start_time < timeout:
@@ -319,6 +344,9 @@ class PywinautoWindowFinder(IWindowFinder):
         Returns:
             Process handle or None.
         """
+        if not self._available:
+            return None
+
         try:
             app = Application(backend=self._backend).start(exe_path)
 

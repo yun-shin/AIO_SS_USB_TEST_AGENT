@@ -260,7 +260,8 @@ def get_settings() -> AgentSettings:
     """
     # YAML 설정을 기본값으로 사용
     yaml_overrides = {
-        k: v for k, v in _yaml_config.items()
+        k: v
+        for k, v in _yaml_config.items()
         if k in AgentSettings.model_fields and not k.startswith("_")
     }
 

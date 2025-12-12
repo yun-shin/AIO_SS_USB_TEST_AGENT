@@ -14,6 +14,7 @@ from .process_monitor import (
 )
 from .mfc_ui_monitor import MFCUIMonitor, MFCUIState, UIStateChange
 from .batch_executor import BatchExecutor, BatchExecutorManager, BatchProgress
+from .worker_pool import WorkerPool, WorkerPriority
 
 __all__ = [
     "TestExecutor",
@@ -29,4 +30,6 @@ __all__ = [
     "BatchExecutor",
     "BatchExecutorManager",
     "BatchProgress",
+    "WorkerPool",
+    "WorkerPriority",
 ]

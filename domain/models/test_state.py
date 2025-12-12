@@ -82,7 +82,9 @@ class TestState:
             is_active=kwargs.get("is_active", self.is_active),
             started_at=kwargs.get("started_at", self.started_at),
             updated_at=datetime.now(),
-            estimated_remaining=kwargs.get("estimated_remaining", self.estimated_remaining),
+            estimated_remaining=kwargs.get(
+                "estimated_remaining", self.estimated_remaining
+            ),
             avg_loop_time=kwargs.get("avg_loop_time", self.avg_loop_time),
             error_count=kwargs.get("error_count", self.error_count),
             last_error=kwargs.get("last_error", self.last_error),

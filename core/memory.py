@@ -66,7 +66,10 @@ class MemoryStats:
             "vms_mb": round(self.vms_mb, 2),
             "gc_objects": self.gc_objects,
             "gc_generations": [
-                {"collections": g.get("collections", 0), "collected": g.get("collected", 0)}
+                {
+                    "collections": g.get("collections", 0),
+                    "collected": g.get("collected", 0),
+                }
                 for g in self.gc_generations
             ],
             "timestamp": self.timestamp.isoformat(),
@@ -179,6 +182,7 @@ class MemoryManager:
         self._psutil_available = False
         try:
             import psutil
+
             self._psutil_available = True
         except ImportError:
             pass
@@ -194,6 +198,7 @@ class MemoryManager:
 
         if self._psutil_available:
             import psutil
+
             process = psutil.Process()
             mem_info = process.memory_info()
             rss_mb = mem_info.rss / (1024 * 1024)
@@ -530,3 +535,24 @@ class FakeMemoryManager:
     def set_memory_mb(self, mb: float) -> None:
         """Set simulated memory usage (for testing)."""
         self._memory_mb = mb
+
+    def should_optimize(self) -> bool:
+        """Check if optimization is recommended (always returns False for fake)."""
+        return False
+
+    def get_statistics(self) -> dict[str, Any]:
+        """Get memory management statistics."""
+        stats = self.get_memory_usage()
+        return {
+            "current_memory": stats.to_dict(),
+            "optimization_count": len(self._optimize_calls),
+            "total_freed_mb": 0.0,
+            "last_gc_time": None,
+            "cleanup_callbacks": list(self._cleanup_callbacks.keys()),
+            "thresholds": {
+                "warning_mb": 256.0,
+                "critical_mb": 512.0,
+                "gc_interval_seconds": 300.0,
+                "max_gc_objects": 100000,
+            },
+        }

@@ -140,7 +140,9 @@ class MFCController:
             self._slot_states[slot_idx].error_message = None
         else:
             self._slot_states[slot_idx].status = SlotStatus.ERROR
-            self._slot_states[slot_idx].error_message = (
+            self._slot_states[
+                slot_idx
+            ].error_message = (
                 "USB Test.exe에 연결할 수 없습니다. 프로그램 경로를 확인하세요."
             )
 
@@ -371,9 +373,7 @@ class MFCController:
             return
 
         self._is_monitoring = True
-        self._monitor_task = asyncio.create_task(
-            self._monitor_loop(callback, interval)
-        )
+        self._monitor_task = asyncio.create_task(self._monitor_loop(callback, interval))
         logger.info("State monitoring started", interval=interval)
 
     def stop_monitoring(self) -> None:
@@ -418,7 +418,9 @@ class MFCController:
                 # 연결되지 않은 슬롯은 IDLE로 설정
                 if self._slot_states[slot_idx].status == SlotStatus.RUNNING:
                     self._slot_states[slot_idx].status = SlotStatus.ERROR
-                    self._slot_states[slot_idx].error_message = "프로세스 연결이 끊어졌습니다."
+                    self._slot_states[
+                        slot_idx
+                    ].error_message = "프로세스 연결이 끊어졌습니다."
                 continue
 
             # TODO: 실제 MFC UI에서 상태 읽기 구현
@@ -445,7 +447,9 @@ class MFCController:
             Success status.
         """
         try:
-            combo = slot_window.find_control(control_id=control_id, class_name="ComboBox")
+            combo = slot_window.find_control(
+                control_id=control_id, class_name="ComboBox"
+            )
             if combo is None:
                 logger.error("ComboBox not found", control_id=control_id)
                 return False
@@ -468,9 +472,7 @@ class MFCController:
                 if normalized == target:
                     combo.select(idx)
                     await asyncio.sleep(0.1)
-                    logger.debug(
-                        "ComboBox selected", control_id=control_id, value=item
-                    )
+                    logger.debug("ComboBox selected", control_id=control_id, value=item)
                     return True
 
             # 2순위: 대상 값이 포함된 아이템 매칭 (예: "E" in "E:\\")
@@ -555,7 +557,9 @@ class MFCController:
             Success status.
         """
         try:
-            button = slot_window.find_control(control_id=control_id, class_name="Button")
+            button = slot_window.find_control(
+                control_id=control_id, class_name="Button"
+            )
             if button is None:
                 logger.error("Button not found", control_id=control_id)
                 return False
@@ -565,7 +569,9 @@ class MFCController:
                 logger.error(
                     "Button is disabled",
                     control_id=control_id,
-                    button_text=button.window_text() if hasattr(button, 'window_text') else "unknown",
+                    button_text=button.window_text()
+                    if hasattr(button, "window_text")
+                    else "unknown",
                 )
                 return False
 
@@ -592,7 +598,9 @@ class MFCController:
             Status text (e.g., "IDLE", "Test", "Pass", "Fail").
         """
         try:
-            status = slot_window.find_control(control_id=MFCControlId.TXT_STATUS, class_name="Static")
+            status = slot_window.find_control(
+                control_id=MFCControlId.TXT_STATUS, class_name="Static"
+            )
             if status is None:
                 return "UNKNOWN"
             return status.window_text()

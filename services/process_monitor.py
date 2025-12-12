@@ -94,7 +94,9 @@ class ProcessMonitor:
         self._slot_running: dict[int, bool] = {}
 
         # 콜백
-        self._on_termination: Callable[[ProcessTerminationEvent], Awaitable[None]] | None = None
+        self._on_termination: (
+            Callable[[ProcessTerminationEvent], Awaitable[None]] | None
+        ) = None
 
     def set_termination_callback(
         self,

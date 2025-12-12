@@ -13,8 +13,16 @@ from tenacity import (
     wait_exponential,
     retry_if_exception_type,
 )
-from pywinauto.controls.uiawrapper import UIAWrapper
-from pywinauto.findwindows import ElementNotFoundError
+
+try:  # pragma: no cover - optional dependency
+    from pywinauto.controls.uiawrapper import UIAWrapper
+    from pywinauto.findwindows import ElementNotFoundError
+except ImportError:  # pragma: no cover - allow import without pywinauto
+    UIAWrapper = Any  # type: ignore
+
+    class ElementNotFoundError(Exception):
+        """Fallback when pywinauto is unavailable."""
+
 
 from config.constants import TimeoutConfig
 from utils.logging import get_logger
@@ -112,7 +120,9 @@ class ControlWrapper:
             Success status.
         """
         if not self.exists:
-            logger.warning("Control not found for double click", control_name=self._name)
+            logger.warning(
+                "Control not found for double click", control_name=self._name
+            )
             return False
 
         try:
@@ -198,7 +208,9 @@ class ControlWrapper:
             Success status.
         """
         if not self.exists:
-            logger.warning("Control not found for set_checkbox", control_name=self._name)
+            logger.warning(
+                "Control not found for set_checkbox", control_name=self._name
+            )
             return False
 
         try:
