@@ -45,7 +45,8 @@ class SlotWindowManager:
     def is_connected(self) -> bool:
         """Process connection status.
 
-        Returns True only if app, window are set AND the process is still running.
+        Returns True only if app, window are set, process is running,
+        AND the window is still valid and responsive.
         """
         if self._app is None or self._main_window is None or self._pid is None:
             return False
@@ -57,8 +58,24 @@ class SlotWindowManager:
                 # 프로세스가 죽었으면 연결 정보 정리
                 self._clear_connection()
                 return False
+
+            # 윈도우가 여전히 유효한지 확인 (슬롯 재사용 시 stale 참조 방지)
+            if not self._main_window.exists():
+                logger.warning(
+                    "Window reference is stale, clearing connection",
+                    slot_idx=self.slot_idx,
+                    pid=self._pid,
+                )
+                self._clear_connection()
+                return False
+
             return True
-        except Exception:
+        except Exception as e:
+            logger.warning(
+                "Connection check failed",
+                slot_idx=self.slot_idx,
+                error=str(e),
+            )
             return False
 
     def _clear_connection(self) -> None:

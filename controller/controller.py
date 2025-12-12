@@ -11,11 +11,14 @@ from typing import Optional
 from config.settings import get_settings
 from config.constants import (
     TestCapacity,
+    TestFile,
     TestMethod,
-    TestType,
+    TestPreset,
     ProcessState,
     SlotConfig,
     MFCControlId,
+    RetryConfig,
+    TimeoutConfig,
 )
 from domain.models.test_config import TestConfig
 from domain.models.test_state import TestState
@@ -203,9 +206,8 @@ class MFCController:
             "Starting test",
             slot_idx=slot_idx,
             test_name=config.test_name,
-            capacity=config.capacity,
-            method=config.method,
-            loop_count=config.loop_count,
+            capacity=config.capacity.value,
+            method=config.method.value,
             loop_step=config.loop_step,
         )
 
@@ -219,6 +221,10 @@ class MFCController:
             slot_window = self._window_manager.get_slot_window(slot_idx)
             if not slot_window or not slot_window.is_connected:
                 raise RuntimeError("Slot window not available")
+
+            # MFC 상태 리셋 (Pass/Idle 상태에서 Contact 클릭 → 컨트롤 활성화)
+            # 기존 AIO_USB_TEST_MACRO의 wait_until_ready 로직 참조
+            await self._reset_mfc_state(slot_window)
 
             # MFC 컨트롤 조작 (순서 중요!)
             # 0. Ignore Fail 체크 해제 (항상 먼저 실행)
@@ -234,17 +240,16 @@ class MFCController:
             await self._set_method(slot_window, config.method)
 
             # 4. 루프 카운트 설정 (loop_step 값을 MFC에 설정)
-            # loop_step이 MFC Client에 실제 설정되는 1회 실행 루프 횟수
             await self._set_loop_count(slot_window, config.loop_step)
 
-            # 5. 테스트 타입 설정
-            await self._set_test_type(slot_window, config.test_type)
+            # 5. 테스트 파일 타입 설정 (Photo 또는 MP3)
+            await self._set_test_file(slot_window, config.test_file)
 
             # 6. Contact 버튼 클릭 (환경 변수 및 드라이브 인식)
             await self._click_contact_button(slot_window)
 
             # Contact 완료 대기 및 Test 버튼 활성화 대기
-            await self._wait_for_test_button_enabled(slot_window, timeout=10.0)
+            await self._wait_for_test_button_enabled(slot_window)
 
             # 7. Test 버튼 클릭 (테스트 시작)
             await self._click_start_button(slot_window)
@@ -290,11 +295,14 @@ class MFCController:
                 raise RuntimeError("Slot window not available")
 
             # Batch 계속: Contact → Test만 실행 (설정은 이미 됨)
+            # 0. Contact 버튼이 활성화될 때까지 대기 (이전 배치 완료 확인)
+            await self._wait_for_contact_button_enabled(slot_window)
+
             # 1. Contact 버튼 클릭
             await self._click_contact_button(slot_window)
 
-            # Contact 완료 대기 및 Test 버튼 활성화 대기
-            await self._wait_for_test_button_enabled(slot_window, timeout=10.0)
+            # Contact 완료 대기 및 Test 버튼 활성화 대기 (기본 타임아웃 사용)
+            await self._wait_for_test_button_enabled(slot_window)
 
             # 2. Test 버튼 클릭
             await self._click_start_button(slot_window)
@@ -446,12 +454,35 @@ class MFCController:
             items = combo.item_texts()
             logger.debug("ComboBox items", control_id=control_id, items=items)
 
-            # 정확한 매칭 또는 부분 매칭으로 아이템 선택
-            for idx, item in enumerate(items):
-                if value == item or value in item or item in value:
+            # 정상화를 통해 대소문자/공백 차이 최소화
+            def _normalize(text: str) -> str:
+                return text.strip().lower()
+
+            target = _normalize(value)
+            normalized_items = [
+                (idx, item, _normalize(item)) for idx, item in enumerate(items)
+            ]
+
+            # 1순위: 정확히 동일한 값 매칭
+            for idx, item, normalized in normalized_items:
+                if normalized == target:
                     combo.select(idx)
                     await asyncio.sleep(0.1)
-                    logger.debug("ComboBox selected", control_id=control_id, value=item)
+                    logger.debug(
+                        "ComboBox selected", control_id=control_id, value=item
+                    )
+                    return True
+
+            # 2순위: 대상 값이 포함된 아이템 매칭 (예: "E" in "E:\\")
+            for idx, item, normalized in normalized_items:
+                if target and target in normalized:
+                    combo.select(idx)
+                    await asyncio.sleep(0.1)
+                    logger.debug(
+                        "ComboBox selected (partial)",
+                        control_id=control_id,
+                        value=item,
+                    )
                     return True
 
             logger.warning(
@@ -514,6 +545,8 @@ class MFCController:
     ) -> bool:
         """Click button by control ID.
 
+        Uses pywinauto's click() method which matches AIO_USB_TEST_MACRO behavior.
+
         Args:
             slot_window: Slot window manager.
             control_id: Control ID (integer for win32 backend).
@@ -527,8 +560,17 @@ class MFCController:
                 logger.error("Button not found", control_id=control_id)
                 return False
 
-            button.click_input()
-            await asyncio.sleep(0.2)
+            # 버튼 활성화 상태 확인
+            if not button.is_enabled():
+                logger.error(
+                    "Button is disabled",
+                    control_id=control_id,
+                    button_text=button.window_text() if hasattr(button, 'window_text') else "unknown",
+                )
+                return False
+
+            button.click()
+            await asyncio.sleep(0.3)
             logger.debug("Button clicked", control_id=control_id)
             return True
 
@@ -536,7 +578,7 @@ class MFCController:
             logger.error(
                 "Failed to click button",
                 control_id=control_id,
-                error=str(e),
+                error=str(e) if str(e) else type(e).__name__,
             )
             return False
 
@@ -645,34 +687,26 @@ class MFCController:
         if not success:
             raise RuntimeError(f"Failed to set method: {method}")
 
-    async def _set_test_type(
+    async def _set_test_file(
         self,
         slot_window: SlotWindowManager,
-        test_type: TestType,
+        test_file: TestFile,
     ) -> None:
-        """Set test type on slot window.
+        """Set test file type on slot window.
 
         Args:
             slot_window: Slot window manager.
-            test_type: Test type.
+            test_file: Test file type (Photo or MP3).
         """
-        # WebUI의 "Full Photo"/"Full MP3" 등을 USB Test.exe의 "Photo"/"MP3"로 매핑
-        test_type_str = str(test_type)
-        if "Photo" in test_type_str:
-            test_type_value = "Photo"
-        elif "MP3" in test_type_str:
-            test_type_value = "MP3"
-        else:
-            test_type_value = test_type_str
-
-        logger.debug("Setting test type", test_type=test_type_str, mapped_value=test_type_value)
+        test_file_value = str(test_file)
+        logger.debug("Setting test file", test_file=test_file_value)
         success = await self._select_combobox_item(
             slot_window,
             MFCControlId.CMB_TEST_TYPE,
-            test_type_value,
+            test_file_value,
         )
         if not success:
-            raise RuntimeError(f"Failed to set test type: {test_type}")
+            raise RuntimeError(f"Failed to set test file: {test_file}")
 
     async def _set_drive(
         self,
@@ -777,19 +811,200 @@ class MFCController:
         if not success:
             raise RuntimeError(f"Failed to set loop count: {loop_count}")
 
+    async def _set_foreground(self, slot_window: SlotWindowManager) -> bool:
+        """Set slot window to foreground with retry.
+
+        Multiple USB Test.exe processes may compete for focus.
+        Uses retry logic with double-click + set_focus (AIO_USB_TEST_MACRO pattern).
+
+        Args:
+            slot_window: Slot window manager.
+
+        Returns:
+            True if focus was set successfully.
+        """
+        max_retries = RetryConfig.FOCUS_MAX_RETRIES
+        retry_delay = RetryConfig.FOCUS_RETRY_DELAY
+
+        for attempt in range(max_retries):
+            try:
+                main_window = slot_window.main_window
+                if main_window:
+                    # AIO_USB_TEST_MACRO 패턴: click_input(double=True) + set_focus()
+                    try:
+                        main_window.click_input(double=True)
+                    except Exception:
+                        pass  # 클릭 실패해도 set_focus 시도
+
+                    main_window.set_focus()
+                    await asyncio.sleep(RetryConfig.FOCUS_SETTLE_DELAY)
+
+                    logger.debug(
+                        "Window focus set",
+                        attempt=attempt + 1,
+                        pid=slot_window.pid,
+                    )
+                    return True
+            except Exception as e:
+                logger.warning(
+                    "Failed to set focus",
+                    attempt=attempt + 1,
+                    error=str(e),
+                )
+                if attempt < max_retries - 1:
+                    await asyncio.sleep(retry_delay)
+
+        logger.error("Failed to set window focus after retries")
+        return False
+
+    async def _click_button_with_focus(
+        self,
+        slot_window: SlotWindowManager,
+        control_id: int,
+        button_name: str = "button",
+        max_retries: int = RetryConfig.BUTTON_CLICK_MAX_RETRIES,
+        retry_delay: float = RetryConfig.BUTTON_CLICK_RETRY_DELAY,
+    ) -> bool:
+        """Click button with focus setting and retry logic.
+
+        Ensures window is focused before clicking, with retry on failure.
+
+        Args:
+            slot_window: Slot window manager.
+            control_id: Control ID of the button.
+            button_name: Button name for logging.
+            max_retries: Maximum retry attempts.
+            retry_delay: Delay between retries in seconds.
+
+        Returns:
+            True if button was clicked successfully.
+        """
+        for attempt in range(max_retries):
+            try:
+                # 1. 포커스 설정
+                await self._set_foreground(slot_window)
+                await asyncio.sleep(0.1)
+
+                # 2. 버튼 클릭
+                success = await self._click_button(slot_window, control_id)
+                if success:
+                    logger.debug(
+                        f"{button_name} clicked successfully",
+                        attempt=attempt + 1,
+                    )
+                    return True
+
+            except Exception as e:
+                logger.warning(
+                    f"Failed to click {button_name}",
+                    attempt=attempt + 1,
+                    error=str(e),
+                )
+
+            if attempt < max_retries - 1:
+                logger.debug(
+                    f"Retrying {button_name} click",
+                    next_attempt=attempt + 2,
+                    delay=retry_delay,
+                )
+                await asyncio.sleep(retry_delay)
+
+        return False
+
     async def _click_start_button(self, slot_window: SlotWindowManager) -> None:
-        """Click start button on slot window.
+        """Click start button on slot window with retry.
+
+        Tries control_id first, then falls back to attribute access (AIO_USB_TEST_MACRO style).
 
         Args:
             slot_window: Slot window manager.
         """
         logger.debug("Clicking start button")
-        success = await self._click_button(slot_window, MFCControlId.BTN_TEST)
-        if not success:
-            raise RuntimeError("Failed to click start button")
+
+        # control_id로 시도
+        success = await self._click_button_with_focus(
+            slot_window,
+            MFCControlId.BTN_TEST,
+            button_name="Test",
+            # 기본값 사용 (RetryConfig에서 정의)
+        )
+
+        if success:
+            return
+
+        # 속성 접근 방식 (AIO_USB_TEST_MACRO 방식): dialog.TestButton.click()
+        logger.info("Trying Test button by attribute access")
+        try:
+            await self._set_foreground(slot_window)
+            await asyncio.sleep(RetryConfig.FOCUS_SETTLE_DELAY)
+
+            main_window = slot_window.main_window
+            if main_window:
+                test_btn = getattr(main_window, "TestButton", None)
+                if test_btn is not None:
+                    test_btn.click()
+                    await asyncio.sleep(RetryConfig.CLICK_SETTLE_DELAY)
+                    logger.info("Test button clicked via attribute access")
+                    return
+        except Exception as e:
+            logger.warning("Attribute access click failed", error=str(e))
+
+        raise RuntimeError("Failed to click start button after all attempts")
+
+    async def _reset_mfc_state(self, slot_window: SlotWindowManager) -> None:
+        """Reset MFC state to enable controls (only when in Pass state).
+
+        When MFC is in Pass state, ComboBox controls are disabled.
+        Clicking Contact button resets the state and enables controls.
+
+        IMPORTANT: Only reset when in Pass state!
+        - Initial run: Settings → Contact → Test (no reset needed)
+        - After Pass: Contact (reset) → Settings → Contact → Test
+
+        Drive must be set BEFORE clicking Contact, so we only reset
+        when MFC is already in Pass state (previous test completed).
+
+        Args:
+            slot_window: Slot window manager.
+        """
+        try:
+            # MFC 상태 확인 (Button6 = Pass/Idle/Test/Fail/Stop)
+            state_btn = slot_window.get_control_by_name("Button6")
+            if not state_btn:
+                logger.debug("State button not found, skipping reset")
+                return
+
+            status_text = state_btn.window_text()
+            logger.debug("Current MFC state", status_text=status_text)
+
+            # Pass 상태일 때만 Contact 눌러서 리셋
+            # (초기 Idle 상태에서는 드라이브 설정 전에 Contact 누르면 안 됨)
+            if status_text and "Pass" in status_text:
+                button = slot_window.find_control(
+                    control_id=MFCControlId.BTN_CONTACT,
+                    class_name="Button",
+                )
+
+                if button is not None and button.is_enabled():
+                    await self._set_foreground(slot_window)
+                    await asyncio.sleep(RetryConfig.FOCUS_SETTLE_DELAY)
+                    button.click()
+                    await asyncio.sleep(0.5)  # 상태 변경 대기
+                    logger.info("MFC state reset via Contact button (was Pass state)")
+                else:
+                    logger.debug("Contact button not enabled in Pass state")
+            else:
+                logger.debug(
+                    "MFC not in Pass state, skipping reset",
+                    status_text=status_text,
+                )
+
+        except Exception as e:
+            logger.warning("MFC state reset failed (non-fatal)", error=str(e))
+            # 실패해도 계속 진행 (컨트롤이 이미 활성화 상태일 수 있음)
 
     async def _click_contact_button(self, slot_window: SlotWindowManager) -> None:
-        """Click contact button on slot window.
+        """Click contact button on slot window with retry.
 
         Contact button initializes environment variables and drive recognition.
         Must be clicked before Test button.
@@ -798,14 +1013,87 @@ class MFCController:
             slot_window: Slot window manager.
         """
         logger.debug("Clicking contact button")
-        success = await self._click_button(slot_window, MFCControlId.BTN_CONTACT)
-        if not success:
-            raise RuntimeError("Failed to click contact button")
+
+        # control_id로 시도
+        success = await self._click_button_with_focus(
+            slot_window,
+            MFCControlId.BTN_CONTACT,
+            button_name="Contact",
+            # 기본값 사용 (RetryConfig에서 정의)
+        )
+
+        if success:
+            return
+
+        # 속성 접근 방식 (AIO_USB_TEST_MACRO 방식): dialog.ContactButton.click()
+        logger.info("Trying Contact button by attribute access")
+        try:
+            await self._set_foreground(slot_window)
+            await asyncio.sleep(RetryConfig.FOCUS_SETTLE_DELAY)
+
+            main_window = slot_window.main_window
+            if main_window:
+                contact_btn = getattr(main_window, "ContactButton", None)
+                if contact_btn is not None:
+                    contact_btn.click()
+                    await asyncio.sleep(RetryConfig.CLICK_SETTLE_DELAY)
+                    logger.info("Contact button clicked via attribute access")
+                    return
+        except Exception as e:
+            logger.warning("Attribute access click failed", error=str(e))
+
+        raise RuntimeError("Failed to click contact button after all attempts")
+
+    async def _wait_for_contact_button_enabled(
+        self,
+        slot_window: SlotWindowManager,
+        timeout: float = TimeoutConfig.CONTACT_BUTTON_TIMEOUT,
+    ) -> None:
+        """Wait for Contact button to become enabled.
+
+        Used in batch continuation to ensure previous test is fully complete.
+        Sets foreground focus only when button becomes enabled (경합 방지).
+
+        Args:
+            slot_window: Slot window manager.
+            timeout: Maximum wait time in seconds.
+
+        Raises:
+            RuntimeError: If Contact button is not enabled within timeout.
+        """
+        logger.debug("Waiting for Contact button to be enabled", timeout=timeout)
+        start_time = asyncio.get_event_loop().time()
+        check_interval = TimeoutConfig.BUTTON_CHECK_INTERVAL
+
+        while asyncio.get_event_loop().time() - start_time < timeout:
+            try:
+                # 포커스 설정 없이 버튼 상태만 확인 (경합 방지)
+                button = slot_window.find_control(
+                    control_id=MFCControlId.BTN_CONTACT,
+                    class_name="Button",
+                )
+                if button is not None and button.is_enabled():
+                    # 버튼이 활성화되면 포커스 설정 후 반환
+                    await self._set_foreground(slot_window)
+                    logger.debug(
+                        "Contact button is enabled",
+                        elapsed=f"{asyncio.get_event_loop().time() - start_time:.1f}s",
+                    )
+                    return
+            except Exception as e:
+                logger.debug("Error checking Contact button", error=str(e))
+
+            await asyncio.sleep(check_interval)
+
+        raise RuntimeError(
+            f"Contact button not enabled within {timeout} seconds. "
+            "Previous test may not have completed."
+        )
 
     async def _wait_for_test_button_enabled(
         self,
         slot_window: SlotWindowManager,
-        timeout: float = 10.0,
+        timeout: float = TimeoutConfig.TEST_BUTTON_TIMEOUT,
     ) -> None:
         """Wait for Test button to become enabled after Contact.
 
@@ -818,20 +1106,25 @@ class MFCController:
         """
         logger.debug("Waiting for Test button to be enabled", timeout=timeout)
         start_time = asyncio.get_event_loop().time()
+        check_interval = TimeoutConfig.BUTTON_CHECK_INTERVAL
 
         while asyncio.get_event_loop().time() - start_time < timeout:
             try:
+                # 포커스 설정 없이 버튼 상태만 확인 (경합 방지)
                 button = slot_window.find_control(
                     control_id=MFCControlId.BTN_TEST,
                     class_name="Button",
                 )
                 if button is not None and button.is_enabled():
-                    logger.debug("Test button is now enabled")
+                    logger.debug(
+                        "Test button is now enabled",
+                        elapsed=f"{asyncio.get_event_loop().time() - start_time:.1f}s",
+                    )
                     return
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("Error checking Test button", error=str(e))
 
-            await asyncio.sleep(0.5)
+            await asyncio.sleep(check_interval)
 
         raise RuntimeError(
             f"Test button not enabled within {timeout} seconds. "

@@ -21,6 +21,7 @@ class TestCapacity(StrEnum):
     """
 
     GB_1 = "1GB"
+    GB_4 = "4GB"  # Used for HOT preset
     GB_32 = "32GB"
     GB_64 = "64GB"
     GB_128 = "128GB"
@@ -46,6 +47,67 @@ class TestCapacity(StrEnum):
                 return capacity
         raise ValueError(f"Invalid capacity: {value}")
 
+    def to_gb(self) -> float:
+        """Convert capacity to gigabytes.
+
+        Returns:
+            Capacity in GB.
+        """
+        capacity_map = {
+            TestCapacity.GB_1: 1.0,
+            TestCapacity.GB_4: 4.0,
+            TestCapacity.GB_32: 32.0,
+            TestCapacity.GB_64: 64.0,
+            TestCapacity.GB_128: 128.0,
+            TestCapacity.GB_256: 256.0,
+            TestCapacity.GB_512: 512.0,
+            TestCapacity.TB_1: 1024.0,
+        }
+        return capacity_map.get(self, 0.0)
+
+    @classmethod
+    def from_drive_capacity(cls, drive_capacity_gb: float) -> "TestCapacity":
+        """Find nearest capacity for given drive capacity.
+
+        Finds the closest capacity to the drive capacity (not just <= ).
+        Examples:
+            - 59.7GB → 64GB (closer to 64 than 32)
+            - 66GB → 64GB (closer to 64 than 128)
+            - 100GB → 128GB (closer to 128 than 64)
+
+        Args:
+            drive_capacity_gb: Drive capacity in GB.
+
+        Returns:
+            Nearest TestCapacity enum value.
+        """
+        if drive_capacity_gb <= 0:
+            return cls.GB_32  # Default fallback
+
+        # Sorted by capacity value (ascending)
+        capacities = [
+            (cls.GB_1, 1.0),
+            (cls.GB_4, 4.0),
+            (cls.GB_32, 32.0),
+            (cls.GB_64, 64.0),
+            (cls.GB_128, 128.0),
+            (cls.GB_256, 256.0),
+            (cls.GB_512, 512.0),
+            (cls.TB_1, 1024.0),
+        ]
+
+        # Find the closest capacity (minimum absolute difference)
+        closest = cls.GB_32
+        min_diff = float("inf")
+
+        for capacity_enum, capacity_gb in capacities:
+            diff = abs(drive_capacity_gb - capacity_gb)
+            if diff < min_diff:
+                min_diff = diff
+                closest = capacity_enum
+
+        return closest
+
 
 class TestMethod(StrEnum):
     """Test method.
@@ -58,32 +120,53 @@ class TestMethod(StrEnum):
     CYCLE = "Cycle"
 
 
-class TestType(StrEnum):
-    """Test type.
+class TestPreset(StrEnum):
+    """Test preset type.
 
-    Test types supported by USB Test.
-    Values match USB Test.exe ComboBox items.
+    Determines capacity setting behavior:
+    - FULL: Capacity is set to approximate drive capacity
+    - HOT: Capacity is fixed to 4GB, precondition option available
     """
 
-    MP3 = "MP3"
-    PHOTO = "Photo"
-    OPTION = "Option"
+    FULL = "Full"
+    HOT = "Hot"
 
     def is_hot_test(self) -> bool:
         """Check if this is a hot test.
 
         Returns:
-            True if hot test (currently not supported in this version).
+            True if this is a HOT preset.
         """
-        return False
+        return self == TestPreset.HOT
 
-    def get_test_file(self) -> str:
-        """Return test file type.
+    def get_default_capacity(self, drive_capacity_gb: float = 0) -> "TestCapacity":
+        """Get default capacity for this preset.
+
+        Args:
+            drive_capacity_gb: Drive capacity in GB (used for FULL preset).
 
         Returns:
-            "Photo" or "MP3".
+            TestCapacity enum value.
         """
-        return "Photo" if self == TestType.PHOTO else "MP3"
+        if self == TestPreset.HOT:
+            return TestCapacity.GB_4
+        # FULL preset: find nearest capacity
+        return TestCapacity.from_drive_capacity(drive_capacity_gb)
+
+
+class TestFile(StrEnum):
+    """Test file type.
+
+    File types used in USB Test.
+    Values match USB Test.exe ComboBox items.
+    """
+
+    MP3 = "MP3"
+    PHOTO = "Photo"
+
+
+# Backward compatibility alias
+TestType = TestFile
 
 
 class ProcessState(IntEnum):
@@ -394,3 +477,63 @@ class MFCControlId:
 
     # List
     LST_TEST_DIR = 1020
+
+
+# ============================================================================
+# Retry/Timeout Settings
+# ============================================================================
+# 유저가 실수로 건드렸을 때도 Agent가 너그럽게 재시도하도록 설정
+# MFC USB Test.exe 실패는 엄격하게, Agent 실패는 유연하게 처리
+
+
+class RetryConfig:
+    """Retry configuration constants.
+
+    Agent-side retry settings for resilient operation.
+    These values are designed to be forgiving when users accidentally interact
+    with the window during automated testing.
+    """
+
+    # Button click retries
+    BUTTON_CLICK_MAX_RETRIES: int = 5  # 버튼 클릭 최대 재시도 (기존 2 → 5)
+    BUTTON_CLICK_RETRY_DELAY: float = 1.0  # 재시도 간격 (초) (기존 0.5 → 1.0)
+
+    # Focus setting retries
+    FOCUS_MAX_RETRIES: int = 5  # 포커스 설정 최대 재시도 (기존 3 → 5)
+    FOCUS_RETRY_DELAY: float = 1.0  # 재시도 간격 (초) (기존 0.5 → 1.0)
+
+    # Post-action delays
+    FOCUS_SETTLE_DELAY: float = 0.3  # 포커스 전환 후 대기 (기존 0.2 → 0.3)
+    CLICK_SETTLE_DELAY: float = 0.5  # 클릭 후 대기 (기존 0.3 → 0.5)
+
+
+class TimeoutConfig:
+    """Timeout configuration constants.
+
+    Wait timeouts for various operations. Generous values allow for slow USB
+    devices and system variations.
+    """
+
+    # Wait for button enabled timeouts
+    CONTACT_BUTTON_TIMEOUT: float = 15.0  # Contact 버튼 활성화 대기 (기존 5.0 → 15.0)
+    TEST_BUTTON_TIMEOUT: float = 30.0  # Test 버튼 활성화 대기 (기존 10-15 → 30.0)
+
+    # Check intervals for polling
+    BUTTON_CHECK_INTERVAL: float = 0.5  # 버튼 상태 확인 간격 (기존 0.3 → 0.5)
+
+    # General operation timeouts
+    WINDOW_CONNECT_TIMEOUT: float = 10.0  # 윈도우 연결 타임아웃
+    DRIVE_SCAN_TIMEOUT: float = 30.0  # 드라이브 스캔 타임아웃
+
+    # Process management timeouts
+    PROCESS_START_TIMEOUT: float = 15.0  # USB Test.exe 프로세스 시작 타임아웃
+    PROCESS_TERMINATE_TIMEOUT: float = 10.0  # 프로세스 종료 타임아웃
+
+    # UI element timeouts
+    ELEMENT_WAIT: float = 10.0  # UI 요소 활성화 대기 타임아웃
+
+    # WebSocket timeouts
+    WEBSOCKET_CONNECT_TIMEOUT: float = 10.0  # WebSocket 연결 타임아웃
+    WEBSOCKET_PING_INTERVAL: float = 30.0  # WebSocket ping 간격
+    WEBSOCKET_PING_TIMEOUT: float = 10.0  # WebSocket ping 타임아웃
+    WEBSOCKET_RECONNECT_DELAY: float = 5.0  # WebSocket 재연결 대기 시간

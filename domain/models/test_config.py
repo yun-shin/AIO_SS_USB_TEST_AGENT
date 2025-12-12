@@ -7,7 +7,26 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Optional
 
-from domain.enums import TestCapacity, TestMethod, TestType, VendorId
+from domain.enums import TestCapacity, TestFile, TestMethod, TestPreset, VendorId
+
+
+@dataclass
+class PreconditionConfig:
+    """Precondition configuration for Hot test.
+
+    Precondition runs a 0HR test once with drive capacity before the main test.
+
+    Attributes:
+        enabled: Whether precondition is enabled.
+        method: Precondition method (always 0HR).
+        capacity: Precondition capacity (drive capacity).
+        loop_count: Precondition loop count (always 1).
+    """
+
+    enabled: bool = True
+    method: TestMethod = TestMethod.ZERO_HR
+    capacity: Optional[TestCapacity] = None  # None means use drive capacity
+    loop_count: int = 1
 
 
 @dataclass
@@ -20,37 +39,45 @@ class TestConfig:
         slot_idx: Test slot index (0-3).
         jira_no: Jira issue number.
         sample_no: Sample test number.
-        capacity: Test capacity.
         drive: Test drive letter.
+        test_preset: Test preset (Full or Hot).
+        test_file: Test file type (Photo or MP3).
         method: Test method (0HR, Read, Cycle).
-        test_type: Test type (Full Photo, Full MP3, Hot Photo, Hot MP3).
+        capacity: Test capacity.
         loop_count: Total loop count.
         loop_step: Loop step unit (for batch execution).
         start_loop: Starting loop number.
-        hot_precondition: Whether to run precondition before Hot test.
+        precondition: Precondition configuration (for Hot test).
         hr_enabled: Whether to run Health Report.
         adaptive_vol: Whether to use Adaptive Voltage.
         die_count: Die count.
         vendor_id: Vendor ID.
         batch_enabled: Whether batch mode is enabled.
+        drive_capacity_gb: Drive capacity in GB (for auto capacity selection).
         created_at: Settings creation time.
     """
 
     slot_idx: int
     jira_no: str
     sample_no: str
-    capacity: TestCapacity
     drive: str
+    test_preset: TestPreset
+    test_file: TestFile
     method: TestMethod
-    test_type: TestType
+    capacity: TestCapacity
     loop_count: int
     test_name: str = "USB Test"  # Test name for display
 
     # Optional settings
     loop_step: int = 1
     start_loop: int = 0
-    hot_precondition: bool = True
     batch_enabled: bool = True
+
+    # Precondition settings (for Hot test)
+    precondition: PreconditionConfig = field(default_factory=PreconditionConfig)
+
+    # Drive capacity (for auto capacity calculation)
+    drive_capacity_gb: float = 0.0
 
     # Health Report settings
     hr_enabled: bool = True
@@ -114,17 +141,48 @@ class TestConfig:
         """Check if this is a hot test.
 
         Returns:
-            True if hot test.
+            True if using Hot preset.
         """
-        return self.test_type.is_hot_test()
+        return self.test_preset.is_hot_test()
 
-    def get_test_file(self) -> str:
-        """Return test file type.
+    def needs_precondition(self) -> bool:
+        """Check if precondition should be run.
+
+        Precondition is only available for Hot preset.
+
+        Returns:
+            True if precondition should be run.
+        """
+        return self.is_hot_test() and self.precondition.enabled
+
+    def get_precondition_capacity(self) -> TestCapacity:
+        """Get precondition capacity.
+
+        .. deprecated::
+            Use `self.precondition.capacity` directly instead.
+            Backend now calculates and sends the precondition capacity.
+            Agent should not recalculate.
+
+        R&R (Role & Responsibility):
+        - Backend: Calculate precondition.capacity based on drive_capacity_gb
+        - Agent: Use precondition.capacity directly (no recalculation)
+
+        Returns:
+            TestCapacity from precondition.capacity or fallback to drive calculation.
+        """
+        # Backend에서 계산된 값 사용, fallback은 하위 호환성을 위해 유지
+        if self.precondition.capacity is not None:
+            return self.precondition.capacity
+        # Fallback: 이전 방식 (하위 호환성, 권장하지 않음)
+        return TestCapacity.from_drive_capacity(self.drive_capacity_gb)
+
+    def get_test_file_value(self) -> str:
+        """Return test file type value for MFC.
 
         Returns:
             "Photo" or "MP3".
         """
-        return self.test_type.get_test_file()
+        return str(self.test_file)
 
     def to_dict(self) -> dict:
         """Convert to dictionary.
@@ -136,15 +194,26 @@ class TestConfig:
             "slot_idx": self.slot_idx,
             "jira_no": self.jira_no,
             "sample_no": self.sample_no,
-            "capacity": self.capacity.value,
             "drive": self.drive,
+            "test_preset": self.test_preset.value,
+            "test_file": self.test_file.value,
             "method": self.method.value,
-            "test_type": self.test_type.value,
+            "capacity": self.capacity.value,
             "loop_count": self.loop_count,
             "loop_step": self.loop_step,
             "start_loop": self.start_loop,
-            "hot_precondition": self.hot_precondition,
             "batch_enabled": self.batch_enabled,
+            "precondition": {
+                "enabled": self.precondition.enabled,
+                "method": self.precondition.method.value,
+                "capacity": (
+                    self.precondition.capacity.value
+                    if self.precondition.capacity
+                    else None
+                ),
+                "loop_count": self.precondition.loop_count,
+            },
+            "drive_capacity_gb": self.drive_capacity_gb,
             "hr_enabled": self.hr_enabled,
             "adaptive_vol": self.adaptive_vol,
             "die_count": self.die_count,
@@ -157,28 +226,77 @@ class TestConfig:
     def from_dict(cls, data: dict) -> "TestConfig":
         """Create TestConfig from dictionary.
 
+        JSON structure from Backend (new structure only, no legacy):
+        {
+            "slot_idx": 0,
+            "drive": "H",
+            "test_preset": "Hot",
+            "test_file": "Photo",
+            "precondition": {
+                "enabled": true,
+                "capacity": "64GB",  // Backend calculated
+                "method": "0HR",
+                "loop_count": 1
+            },
+            "test": {
+                "capacity": "4GB",   // Main test capacity
+                "method": "0HR",
+                "loop_count": 10,
+                "loop_step": 1
+            }
+        }
+
         Args:
-            data: Settings dictionary.
+            data: Settings dictionary from Backend.
 
         Returns:
             TestConfig instance.
+
+        Raises:
+            KeyError: If required 'test' field is missing.
         """
+        # Parse precondition config (Backend에서 capacity를 계산해서 보내줌)
+        precondition_data = data.get("precondition", {})
+        precondition = PreconditionConfig(
+            enabled=precondition_data.get("enabled", True),
+            method=TestMethod(precondition_data.get("method", "0HR")),
+            capacity=(
+                TestCapacity(precondition_data["capacity"])
+                if precondition_data.get("capacity")
+                else None
+            ),
+            loop_count=precondition_data.get("loop_count", 1),
+        )
+
+        # Parse main test config (required, no legacy support)
+        test_data = data.get("test")
+        if not test_data:
+            raise KeyError("Missing required 'test' field in config from Backend")
+
+        test_capacity = TestCapacity(test_data.get("capacity", "4GB"))
+        test_method = TestMethod(test_data.get("method", "0HR"))
+        test_loop_count = test_data.get("loop_count", 10)
+        test_loop_step = test_data.get("loop_step", 1)
+
         return cls(
             slot_idx=data["slot_idx"],
-            jira_no=data["jira_no"],
-            sample_no=data["sample_no"],
-            capacity=TestCapacity(data["capacity"]),
+            jira_no=data.get("jira_no", ""),
+            sample_no=data.get("sample_no", ""),
             drive=data["drive"],
-            method=TestMethod(data["method"]),
-            test_type=TestType(data["test_type"]),
-            loop_count=data["loop_count"],
-            loop_step=data.get("loop_step", 1),
+            test_preset=TestPreset(data["test_preset"]),
+            test_file=TestFile(data["test_file"]),
+            method=test_method,
+            capacity=test_capacity,
+            loop_count=test_loop_count,
+            loop_step=test_loop_step,
             start_loop=data.get("start_loop", 0),
-            hot_precondition=data.get("hot_precondition", True),
             batch_enabled=data.get("batch_enabled", True),
+            precondition=precondition,
+            drive_capacity_gb=data.get("drive_capacity_gb", 0.0),
             hr_enabled=data.get("hr_enabled", True),
             adaptive_vol=data.get("adaptive_vol", False),
             die_count=data.get("die_count", 1),
             vendor_id=VendorId(data.get("vendor_id", "ss")),
             test_id=data.get("test_id"),
+            test_name=data.get("test_name", "USB Test"),
         )

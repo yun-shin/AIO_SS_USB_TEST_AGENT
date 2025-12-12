@@ -156,7 +156,9 @@ class BatchExecutor:
     ) -> bool:
         """Execute batch test.
 
-        Runs all batch iterations sequentially.
+        Simple structure:
+        1. if (precondition enabled) → run precondition → wait for pass
+        2. do { run batch → wait for pass } while (batch count)
 
         Args:
             slot_idx: Slot index.
@@ -166,206 +168,195 @@ class BatchExecutor:
         Returns:
             True if all batches completed successfully.
         """
-        # Calculate batch count
-        total_batch = math.ceil(config.loop_count / config.loop_step)
+        self.clear_cancel(slot_idx)
         started_at = datetime.now()
 
+        # Debug: Check precondition conditions
         logger.info(
-            "Starting batch execution",
+            "Checking precondition requirements",
+            slot_idx=slot_idx,
+            test_preset=config.test_preset.value,
+            is_hot_test=config.test_preset.is_hot_test(),
+            precondition_enabled=config.precondition.enabled,
+            precondition_capacity=config.precondition.capacity.value if config.precondition.capacity else None,
+            needs_precondition=config.needs_precondition(),
+        )
+
+        # === Phase 1: Precondition (if enabled) ===
+        if config.needs_precondition():
+            logger.info(
+                "Phase 1: Running precondition",
+                slot_idx=slot_idx,
+                capacity=config.precondition.capacity.value if config.precondition.capacity else "NOT SET",
+                method="0HR",
+            )
+
+            precond_success = await self._run_precondition(slot_idx, config)
+            if not precond_success:
+                logger.error("Precondition failed", slot_idx=slot_idx)
+                if self._state_machine.can_transition(SlotEvent.FAIL):
+                    self._state_machine.trigger(SlotEvent.FAIL, error_message="Precondition failed")
+                return False
+
+            logger.info("Precondition completed", slot_idx=slot_idx)
+
+        # === Phase 2: Main Batches ===
+        total_batch = math.ceil(config.loop_count / config.loop_step)
+        logger.info(
+            "Phase 2: Starting main batches",
             slot_idx=slot_idx,
             total_loop=config.loop_count,
             loop_step=config.loop_step,
             total_batch=total_batch,
         )
 
-        # 주의: main.py에서 이미 CONFIGURING 상태로 전이된 상태에서 호출됨
-        # 따라서 여기서 START_TEST 트리거하지 않음
-
-        # Context만 업데이트 (상태 전이 없이)
+        # Initialize context
         context = self._state_machine.context
         context.total_loop = config.loop_count
         context.loop_step = config.loop_step
-        context.current_batch = 0
         context.total_batch = total_batch
-        context.current_loop = 0
+        context.is_precondition = False
 
-        self.clear_cancel(slot_idx)
+        batch_num = 0
+        while batch_num < total_batch:
+            batch_num += 1
 
-        try:
-            for batch_num in range(1, total_batch + 1):
-                # Check for cancellation
-                if self.is_cancel_requested(slot_idx):
-                    logger.info("Batch execution cancelled", slot_idx=slot_idx)
-                    self._state_machine.trigger(SlotEvent.STOP)
-                    return False
+            # Check for cancellation
+            if self.is_cancel_requested(slot_idx):
+                logger.info("Batch execution cancelled", slot_idx=slot_idx)
+                self._state_machine.trigger(SlotEvent.STOP)
+                return False
 
-                # Calculate current loop progress
-                current_loop = min(batch_num * config.loop_step, config.loop_count)
-                progress_percent = (current_loop / config.loop_count) * 100
+            # Update context
+            context.current_batch = batch_num
+            context.current_loop = (batch_num - 1) * config.loop_step
+            current_loop = min(batch_num * config.loop_step, config.loop_count)
 
-                # Update context (상태 전이 없이 context만 업데이트)
-                context = self._state_machine.context
-                context.current_batch = batch_num
-                context.current_loop = (batch_num - 1) * config.loop_step
-
-                # Report progress
+            # Report progress
+            if on_progress:
                 progress = BatchProgress(
                     slot_idx=slot_idx,
                     current_batch=batch_num,
                     total_batch=total_batch,
-                    current_loop=(batch_num - 1) * config.loop_step,
-                    total_loop=config.loop_count,
-                    loop_step=config.loop_step,
-                    progress_percent=progress_percent,
-                    started_at=started_at,
-                )
-                if on_progress:
-                    await on_progress(progress)
-
-                logger.info(
-                    f"Executing batch {batch_num}/{total_batch}",
-                    slot_idx=slot_idx,
-                    current_loop=current_loop,
-                    is_first_batch=(batch_num == 1),
-                )
-
-                # Execute single batch
-                # 첫 번째 배치만 전체 설정, 이후는 Contact → Test만 실행
-                success = await self._execute_single_batch(
-                    slot_idx=slot_idx,
-                    config=config,
-                    is_first_batch=(batch_num == 1),
-                )
-
-                if not success:
-                    # 취소 요청 또는 Stop 상태인 경우
-                    if (
-                        self.is_cancel_requested(slot_idx)
-                        or self._state_machine.state == SlotState.STOPPING
-                    ):
-                        logger.info(
-                            f"Batch {batch_num} cancelled/stopped",
-                            slot_idx=slot_idx,
-                        )
-                        # STOPPING 상태면 STOPPED 이벤트만 트리거
-                        # (이미 _handle_stop_test에서 처리했을 수 있음)
-                        return False
-
-                    # 실제 실패인 경우
-                    logger.error(
-                        f"Batch {batch_num} failed",
-                        slot_idx=slot_idx,
-                    )
-                    # 현재 상태가 FAIL 전이 가능한 상태인지 확인
-                    if self._state_machine.can_transition(SlotEvent.FAIL):
-                        self._state_machine.trigger(
-                            SlotEvent.FAIL,
-                            error_message=f"Batch {batch_num} failed",
-                        )
-                    return False
-
-                # Update progress after batch completion
-                self._state_machine.trigger(
-                    SlotEvent.BATCH_COMPLETE,
-                    context_update={
-                        "current_loop": current_loop,
-                    },
-                )
-
-                # Check if more batches remain
-                if batch_num < total_batch:
-                    # Trigger next batch
-                    self._state_machine.trigger(SlotEvent.BATCH_NEXT)
-                else:
-                    # All batches done
-                    self._state_machine.trigger(SlotEvent.ALL_BATCHES_DONE)
-
-                # Final progress update
-                final_progress = BatchProgress(
-                    slot_idx=slot_idx,
-                    current_batch=batch_num,
-                    total_batch=total_batch,
-                    current_loop=current_loop,
+                    current_loop=context.current_loop,
                     total_loop=config.loop_count,
                     loop_step=config.loop_step,
                     progress_percent=(current_loop / config.loop_count) * 100,
                     started_at=started_at,
                 )
-                if on_progress:
-                    await on_progress(final_progress)
+                await on_progress(progress)
 
             logger.info(
-                "All batches completed successfully",
+                f"Executing batch {batch_num}/{total_batch}",
                 slot_idx=slot_idx,
-                total_batch=total_batch,
+                is_first_batch=(batch_num == 1),
             )
-            return True
 
-        except Exception as e:
-            logger.error(
-                "Batch execution error",
-                slot_idx=slot_idx,
-                error=str(e),
-            )
-            # 현재 상태가 ERROR 전이 가능한 상태인지 확인
-            if self._state_machine.can_transition(SlotEvent.ERROR):
-                self._state_machine.trigger(
-                    SlotEvent.ERROR,
-                    error_message=str(e),
-                )
-            return False
-
-    async def _execute_single_batch(
-        self,
-        slot_idx: int,
-        config: TestConfig,
-        is_first_batch: bool = True,
-    ) -> bool:
-        """Execute a single batch iteration.
-
-        Flow:
-        - First batch: Full Config → Contact → Test → Wait for Pass
-        - Subsequent batches: Contact → Test → Wait for Pass (skip config)
-
-        Args:
-            slot_idx: Slot index.
-            config: Test configuration.
-            is_first_batch: True if this is the first batch (needs full config).
-
-        Returns:
-            True if batch completed successfully.
-        """
-        try:
-            if is_first_batch:
-                # 첫 번째 배치: 전체 설정 후 테스트 시작
+            # Run batch (first: full config, subsequent: contact+test only)
+            if batch_num == 1:
                 success = await self._controller.start_test(slot_idx, config)
             else:
-                # 이후 배치: Contact → Test만 실행 (설정 유지)
                 success = await self._controller.continue_batch(slot_idx)
 
             if not success:
+                logger.error(f"Batch {batch_num} failed to start", slot_idx=slot_idx)
+                if self._state_machine.can_transition(SlotEvent.FAIL):
+                    self._state_machine.trigger(SlotEvent.FAIL, error_message=f"Batch {batch_num} failed")
                 return False
 
             # Transition to RUNNING
+            if self._state_machine.can_transition(SlotEvent.RUN):
+                self._state_machine.trigger(SlotEvent.RUN)
+
+            # Wait for Pass
+            pass_detected = await self._wait_for_pass(slot_idx)
+            if not pass_detected:
+                if self.is_cancel_requested(slot_idx):
+                    logger.info(f"Batch {batch_num} cancelled", slot_idx=slot_idx)
+                    return False
+                logger.error(f"Batch {batch_num} did not pass", slot_idx=slot_idx)
+                if self._state_machine.can_transition(SlotEvent.FAIL):
+                    self._state_machine.trigger(SlotEvent.FAIL, error_message=f"Batch {batch_num} failed")
+                return False
+
+            # Batch complete
+            self._state_machine.trigger(SlotEvent.BATCH_COMPLETE, context_update={"current_loop": current_loop})
+
+            if batch_num < total_batch:
+                self._state_machine.trigger(SlotEvent.BATCH_NEXT)
+
+        # All batches done
+        self._state_machine.trigger(SlotEvent.ALL_BATCHES_DONE)
+        logger.info("All batches completed successfully", slot_idx=slot_idx, total_batch=total_batch)
+        return True
+
+    async def _run_precondition(
+        self,
+        slot_idx: int,
+        config: TestConfig,
+    ) -> bool:
+        """Run precondition test.
+
+        Creates a precondition config and runs a single test.
+
+        Args:
+            slot_idx: Slot index.
+            config: Original test configuration.
+
+        Returns:
+            True if precondition passed.
+        """
+        if config.precondition.capacity is None:
+            logger.error("Precondition capacity not provided by Backend", slot_idx=slot_idx)
+            return False
+
+        # Create precondition config
+        from domain.models.test_config import TestConfig as TC, PreconditionConfig
+        from domain.enums import TestMethod
+
+        precond_config = TC(
+            slot_idx=slot_idx,
+            jira_no=config.jira_no,
+            sample_no=config.sample_no,
+            drive=config.drive,
+            test_preset=config.test_preset,
+            test_file=config.test_file,
+            method=TestMethod.ZERO_HR,
+            capacity=config.precondition.capacity,
+            loop_count=1,
+            loop_step=1,
+            test_name=f"{config.test_name}_precond",
+            drive_capacity_gb=config.drive_capacity_gb,
+            precondition=PreconditionConfig(enabled=False),
+        )
+
+        # Update context
+        context = self._state_machine.context
+        context.is_precondition = True
+        context.total_loop = 1
+        context.current_loop = 0
+
+        # Start precondition test
+        success = await self._controller.start_test(slot_idx, precond_config)
+        if not success:
+            return False
+
+        # Transition to RUNNING
+        if self._state_machine.can_transition(SlotEvent.RUN):
             self._state_machine.trigger(SlotEvent.RUN)
 
-            # Wait for Pass state
-            pass_detected = await self._wait_for_pass(slot_idx)
+        # Wait for Pass
+        pass_detected = await self._wait_for_pass(slot_idx)
+        context.is_precondition = False
 
-            return pass_detected
-
-        except Exception as e:
-            logger.error(
-                "Single batch execution error",
-                slot_idx=slot_idx,
-                error=str(e),
-            )
-            return False
+        return pass_detected
 
     async def _wait_for_pass(self, slot_idx: int) -> bool:
         """Wait for MFC to reach Pass state.
 
         Polls the MFC UI directly until Pass or timeout.
+        First waits for Test state (to ensure new test has started),
+        then waits for Pass/Fail result.
 
         Args:
             slot_idx: Slot index.
@@ -373,7 +364,18 @@ class BatchExecutor:
         Returns:
             True if Pass state detected.
         """
+        from domain.enums import ProcessState
+
+        # 최소 테스트 시간 (초) - 이보다 빨리 Pass가 감지되면 무시
+        # 가장 작은 용량(1GB)도 최소 10초 이상 걸림
+        MIN_TEST_DURATION = 10.0
+
         start_time = asyncio.get_event_loop().time()
+        test_started = False  # Test 상태 진입 여부 추적
+        test_started_time: float | None = None  # Test 상태 진입 시간
+
+        # 첫 폴링 전에 잠시 대기 (MFC UI 업데이트 시간 확보)
+        await asyncio.sleep(0.5)
 
         while asyncio.get_event_loop().time() - start_time < self._pass_wait_timeout:
             # Check for cancellation
@@ -383,17 +385,50 @@ class BatchExecutor:
             # 직접 MFC UI에서 현재 상태 읽기
             process_state = await self._read_process_state_from_ui(slot_idx)
 
+            logger.debug(
+                "Polling MFC state",
+                slot_idx=slot_idx,
+                process_state=process_state.name if process_state else "None",
+                test_started=test_started,
+            )
+
             if process_state is None:
                 await asyncio.sleep(self._poll_interval)
                 continue
 
+            # 테스트가 아직 시작되지 않은 경우: Test 상태를 기다림
+            if not test_started:
+                if process_state == ProcessState.TEST:
+                    test_started = True
+                    test_started_time = asyncio.get_event_loop().time()
+                    logger.info("Test state entered, waiting for result", slot_idx=slot_idx)
+                elif process_state in (ProcessState.IDLE, ProcessState.FAIL, ProcessState.PASS):
+                    # 이전 상태가 남아있음 - 테스트 시작 대기
+                    await asyncio.sleep(self._poll_interval)
+                    continue
+                else:
+                    await asyncio.sleep(self._poll_interval)
+                    continue
+
+            # 테스트가 시작된 후: Pass/Fail 결과 확인
             # Check for Pass state
-            from domain.enums import ProcessState
             if process_state == ProcessState.PASS:
-                logger.debug("Pass state detected", slot_idx=slot_idx)
+                # 테스트 시작 후 최소 시간이 지나지 않으면 무시 (잘못된 상태 읽기 방지)
+                elapsed = asyncio.get_event_loop().time() - (test_started_time or start_time)
+                if elapsed < MIN_TEST_DURATION:
+                    logger.warning(
+                        "Pass detected too early, ignoring (likely false positive)",
+                        slot_idx=slot_idx,
+                        elapsed_seconds=round(elapsed, 1),
+                        min_duration=MIN_TEST_DURATION,
+                    )
+                    await asyncio.sleep(self._poll_interval)
+                    continue
+
+                logger.info("Pass state detected", slot_idx=slot_idx, elapsed_seconds=round(elapsed, 1))
                 return True
 
-            # Check for Fail state
+            # Check for Fail state (only after test started)
             if process_state == ProcessState.FAIL:
                 logger.warning("Fail state detected", slot_idx=slot_idx)
                 return False
@@ -409,6 +444,7 @@ class BatchExecutor:
             "Timeout waiting for Pass state",
             slot_idx=slot_idx,
             timeout=self._pass_wait_timeout,
+            test_started=test_started,
         )
         return False
 

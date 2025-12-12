@@ -8,9 +8,11 @@ from config.constants import (
     ProcessState,
     SlotStatus,
     TestCapacity,
+    TestFile,
     TestMethod,
     TestPhase,
-    TestType,
+    TestPreset,
+    TestType,  # Backward compatibility alias for TestFile
     VendorId,
 )
 
@@ -19,8 +21,10 @@ __all__ = [
     "ProcessState",
     "SlotStatus",
     "TestCapacity",
+    "TestFile",
     "TestMethod",
     "TestPhase",
-    "TestType",
+    "TestPreset",
+    "TestType",  # Backward compatibility alias
     "VendorId",
 ]

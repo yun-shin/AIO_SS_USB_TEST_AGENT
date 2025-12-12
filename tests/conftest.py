@@ -12,7 +12,13 @@ import pytest
 # Config
 from config.settings import AgentSettings
 from domain.models import TestConfig, TestState
-from config.constants import TestCapacity, TestMethod, TestType, VendorId
+from config.constants import (
+    TestCapacity,
+    TestFile,
+    TestMethod,
+    TestPreset,
+    VendorId,
+)
 
 # Core
 from core.container import Container, set_container, reset_container
@@ -98,10 +104,11 @@ def sample_test_config() -> TestConfig:
         slot_idx=0,
         jira_no="TEST-123",
         sample_no="SAMPLE_001",
-        capacity=TestCapacity.GB_32,
         drive="E",
+        test_preset=TestPreset.FULL,
+        test_file=TestFile.PHOTO,
         method=TestMethod.ZERO_HR,
-        test_type=TestType.FULL_PHOTO,
+        capacity=TestCapacity.GB_32,
         loop_count=10,
         loop_step=1,
         hr_enabled=True,

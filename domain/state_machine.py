@@ -105,6 +105,7 @@ class SlotContext:
         loop_step: Loops per batch execution (MFC Client setting).
         current_batch: Current batch iteration (1-based).
         total_batch: Total batch iterations (total_loop / loop_step).
+        is_precondition: Whether currently running precondition.
         started_at: Test start time.
         updated_at: Last update time.
         error_message: Last error message.
@@ -122,6 +123,7 @@ class SlotContext:
     loop_step: int = 1  # MFC Client에 설정되는 1회 실행 루프 횟수
     current_batch: int = 0  # 현재 배치 반복 횟수 (1-based)
     total_batch: int = 1  # 총 배치 반복 횟수
+    is_precondition: bool = False  # Precondition 실행 중 여부
     started_at: Optional[datetime] = None
     updated_at: datetime = field(default_factory=datetime.now)
     error_message: Optional[str] = None
@@ -139,6 +141,7 @@ class SlotContext:
             loop_step=1,
             current_batch=0,
             total_batch=1,
+            is_precondition=False,
             updated_at=datetime.now(),
         )
 
@@ -162,6 +165,7 @@ class SlotContext:
             loop_step=kwargs.get("loop_step", self.loop_step),
             current_batch=kwargs.get("current_batch", self.current_batch),
             total_batch=kwargs.get("total_batch", self.total_batch),
+            is_precondition=kwargs.get("is_precondition", self.is_precondition),
             started_at=kwargs.get("started_at", self.started_at),
             updated_at=datetime.now(),
             error_message=kwargs.get("error_message", self.error_message),
@@ -198,6 +202,7 @@ class SlotContext:
             "loop_step": self.loop_step,
             "current_batch": self.current_batch,
             "total_batch": self.total_batch,
+            "is_precondition": self.is_precondition,
             "started_at": self.started_at.isoformat() if self.started_at else None,
             "updated_at": self.updated_at.isoformat(),
             "progress_percent": self.get_progress_percent(),

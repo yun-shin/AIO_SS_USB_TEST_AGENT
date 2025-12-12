@@ -852,23 +852,81 @@ class Agent:
 
             # 받은 설정 로깅
             logger.info(
-                "Received test config",
+                "Received test config from Backend",
                 slot_idx=slot_idx,
                 test_config=test_config,
             )
 
-            config = TestConfig(
-                slot_idx=slot_idx,
-                jira_no=test_config.get("jira_no", ""),
-                sample_no=test_config.get("sample_no", ""),
-                capacity=test_config.get("capacity", "1TB"),
-                drive=test_config.get("drive", "D"),
-                method=test_config.get("method", "0HR"),
-                test_type=test_config.get("test_type", "Photo"),
-                loop_count=test_config.get("loop_count", 1),
-                loop_step=test_config.get("loop_step", 1),
-                test_name=test_config.get("test_name", "USB Test"),
+            # 헬퍼 함수로 Enum 변환 단순화
+            from utils import to_capacity, to_method, to_preset, to_file
+            from domain.models.test_config import PreconditionConfig
+
+            # Precondition 설정 처리 (Backend에서 capacity 계산해서 보내줌)
+            precondition_data = test_config.get("precondition")
+            precondition_config = None
+            if precondition_data and precondition_data.get("enabled"):
+                # capacity를 Enum으로 변환 (Backend에서 계산된 값 사용)
+                precond_capacity_str = precondition_data.get("capacity")
+                precond_capacity = to_capacity(precond_capacity_str) if precond_capacity_str else None
+
+                logger.info(
+                    "Precondition config from Backend",
+                    enabled=True,
+                    capacity_str=precond_capacity_str,
+                    capacity_enum=precond_capacity.value if precond_capacity else None,
+                    method=precondition_data.get("method", "0HR"),
+                    loop_count=precondition_data.get("loop_count", 1),
+                )
+
+                precondition_config = PreconditionConfig(
+                    enabled=True,
+                    method=to_method(precondition_data.get("method", "0HR")),
+                    capacity=precond_capacity,
+                    loop_count=precondition_data.get("loop_count", 1),
+                )
+
+            # Main test 설정 처리 (새로운 'test' 구조만 지원, legacy 제거)
+            test_data = test_config.get("test")
+            if not test_data:
+                logger.error(
+                    "Missing 'test' field in config - Backend must send new structure",
+                    test_config=test_config,
+                )
+                raise ValueError("Missing 'test' field in config from Backend")
+
+            main_capacity = to_capacity(test_data.get("capacity", "4GB"))
+            main_method = to_method(test_data.get("method", "0HR"))
+            main_loop_count = test_data.get("loop_count", 10)
+            main_loop_step = test_data.get("loop_step", 1)
+
+            logger.info(
+                "Main test config from Backend",
+                capacity=main_capacity.value,
+                method=main_method.value,
+                loop_count=main_loop_count,
+                loop_step=main_loop_step,
             )
+
+            # Config kwargs 구성 (precondition은 있을 때만 포함)
+            config_kwargs = {
+                "slot_idx": slot_idx,
+                "jira_no": test_config.get("jira_no", ""),
+                "sample_no": test_config.get("sample_no", ""),
+                "capacity": main_capacity,
+                "drive": test_config.get("drive", "D"),
+                "method": main_method,
+                "test_preset": to_preset(test_config.get("test_preset", "Full")),
+                "test_file": to_file(test_config.get("test_file", "Photo")),
+                "loop_count": main_loop_count,
+                "loop_step": main_loop_step,
+                "test_name": test_config.get("test_name", "USB Test"),
+                "drive_capacity_gb": test_config.get("drive_capacity_gb", 0.0),
+            }
+
+            if precondition_config is not None:
+                config_kwargs["precondition"] = precondition_config
+
+            config = TestConfig(**config_kwargs)
 
             # State transition: CONFIGURE (if not already)
             if slot_machine.state == SlotState.PREPARING:
